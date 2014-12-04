@@ -1,0 +1,23 @@
+{
+  "uuid": "e4e18f82-c67b-4e37-805a-e0d8973a22eb",
+  "shortName": "pebble-trello2",
+  "longName": "pebble-trello2",
+  "companyName": "MakeAwesomeHappen",
+  "versionCode": 1,
+  "versionLabel": "1.1",
+  "watchapp": {
+    "watchface": false
+  },
+  "appKeys": {
+    "type": 1000000,
+    "value": 1000001,
+    "numElements1": 1000002,
+    "numElements2": 1000003
+  },
+  "resources": {
+    "media": []
+  },
+  "capabilities": [
+    "configurable"
+  ]
+}

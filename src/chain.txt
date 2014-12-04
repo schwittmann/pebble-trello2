@@ -1,0 +1,1 @@
+board -> lists --Req--> cards (opt) --> checklists (opt) --Req--> checklist
