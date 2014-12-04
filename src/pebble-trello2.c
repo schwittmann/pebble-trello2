@@ -99,19 +99,28 @@ int32_t tuple_get_int(Tuple *t) {
   return -1;
 }
 
+void list_window_free(CustomWindow *window) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "TODO: implement freeing");
+}
+
 void createListWindow(DictionaryIterator *iter, CustomWindow *window, SimpleMenuLayerSelectCallback callback) {
+  list_window_free(window);
   Tuple *numElTuple = dict_find(iter, MESSAGE_NUMEL1_DICT_KEY);
   if(!numElTuple) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Message without numels!");
     return;
   }
   int numberElements = tuple_get_int(numElTuple);
+
   SimpleMenuItem* boardMenuItems = malloc(sizeof(SimpleMenuItem)*numberElements);
   memset(boardMenuItems, 0, sizeof(SimpleMenuItem)*numberElements);
-  SimpleMenuSection boardSection = (SimpleMenuSection){
-    .num_items = numberElements,
-    .items = boardMenuItems,
-  };
+
+
+  SimpleMenuSection* boardSection = malloc(sizeof(SimpleMenuSection));
+  boardSection->items = boardMenuItems;
+  boardSection->num_items = numberElements;
+  boardSection->title = NULL;
+
   for(int i =0; ;++i ) {
     Tuple *boardTuple = dict_find(iter, i);
     if(!boardTuple)
@@ -120,7 +129,7 @@ void createListWindow(DictionaryIterator *iter, CustomWindow *window, SimpleMenu
     boardMenuItems[i].title = strdup(boardTuple->value->cstring);
     boardMenuItems[i].callback = callback;
   }
-  window->simplemenu = simple_menu_layer_create(layer_get_frame(window_get_root_layer(window->window)), window->window, &boardSection, 1, NULL);
+  window->simplemenu = simple_menu_layer_create(layer_get_frame(window_get_root_layer(window->window)), window->window, boardSection, 1, NULL);
   Layer *window_layer = window_get_root_layer(window->window);
   layer_add_child(window_layer, simple_menu_layer_get_layer(window->simplemenu));
 }
@@ -139,6 +148,8 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
     case MESSAGE_TYPE_BOARDS:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Got type boards!");
       createListWindow(iter, &windows[CWINDOW_BOARDS], menu_board_select_callback);
+      window_stack_push(windows[CWINDOW_BOARDS].window, true);
+      window_stack_remove(windows[CWINDOW_LOADING].window, false);
       break;
     case MESSAGE_TYPE_INIT:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Got type init!");

@@ -2,22 +2,78 @@
 var MESSAGE_TYPE_BOARDS	= 0;
 var MESSAGE_TYPE_INIT	= 1;
 
+var loadedInit = false;
+var globalData = {};
+
+
+
+function makeRequest(urlpath, success, fail, verb) {
+  function decodeUtf8(utftext) {
+    var minimalMappingUtf8ToIso8859 = {
+      228:'ae',
+      196:'Ae',
+      252:'ue',
+      220:'Ue',
+      246:'oe',
+      214:'Oe',
+      223:'ss'
+    };
+    var ret = "";
+    for(var i=0; i<utftext.length; ++i) {
+      if(utftext.charCodeAt(i) in minimalMappingUtf8ToIso8859) {
+        ret += minimalMappingUtf8ToIso8859[utftext.charCodeAt(i)];
+      } else {
+        ret += utftext[i];
+      }
+      if (utftext.charCodeAt(i) > 127) {
+        console.log("charcode:"+utftext.charCodeAt(i));
+      }
+    }
+    return ret;
+  }
+  var req = new XMLHttpRequest();
+  if(!verb) {
+    verb = "get";
+  }
+  req.open(verb, 'https://api.trello.com/1/'+urlpath+'&key=e3227833b55cbe24bfedd05e5ec870dd&token='+localStorage.getItem("token"));
+  req.onload = function(e) {
+    if (req.readyState != 4)
+        return;
+    if(req.status == 200) {
+      var decoded;
+      console.log("Pre decode:"+window.btoa(req.responseText));
+      try {
+        decoded = decodeUtf8(req.responseText);
+      } catch(err) {
+        console.log("decoding failed:"+err);
+        return;
+      }
+      console.log("got decoded:"+decoded);
+      success(JSON.parse(decoded));
+    } else {
+      console.log("Http request failed :("+ req.responseText);
+      fail(req.responseText, req.status);
+    }
+  };
+  req.send(null);
+}
+
+
+
 Pebble.addEventListener("ready",
 	function(e) {
 		console.log("Javascript got ready");
-		var msg = {};
-		msg.type = MESSAGE_TYPE_INIT;
-		msg.value = localStorage.getItem("token")?1:0;
-    Pebble.sendAppMessage(msg);
-		/*
-		var msg = {};
-		msg.type = 0;
-		msg.elements = 50;
-		for(var i=0; i<msg.elements;++i)
-			msg[i] = "i="+i;
-		
-		Pebble.sendAppMessage(msg);
-*/
+    var hasToken = localStorage.getItem("token")?1:0;
+
+    if(hasToken) {
+      console.log("ready: token available, loading boards")
+      loadBoards();
+    } else {
+      var msg = {};
+      msg.type = MESSAGE_TYPE_INIT;
+      msg.value = hasToken;
+      Pebble.sendAppMessage(msg);
+    }
 	}
 );
 
@@ -36,7 +92,7 @@ Pebble.addEventListener("webviewclosed", function (e) {
     // no configuration needed?
     if (localStorage.getItem("token") && !loadedInit) {
       console.log("token available, okay...");
-      loadStuff();
+      loadBoards();
     }
     return;
   }
@@ -46,11 +102,36 @@ Pebble.addEventListener("webviewclosed", function (e) {
   }
   localStorage.setItem("token", configuration.token);
   console.log("Set token: "+configuration.token);
-  loadStuff();
+  loadBoards();
 });
 
 Pebble.addEventListener("appmessage",
 	function(e) {
 		console.log("JS: got message");
 		console.log(JSON.stringify(e.payload));
-	});
+	}
+);
+
+
+function loadBoards() {
+  loadedInit = true;
+  makeRequest('members/me?fields=username&boards=open&board_lists=open', loadedUser, loadingFailed);
+}
+
+function loadedUser(user) {
+  globalData.user = user;
+
+  var msg = {};
+  msg.type = MESSAGE_TYPE_BOARDS;
+  msg.numElements1 = user.boards.length;
+  for(var i=0; i<msg.numElements1;++i)
+    msg[i] = user.boards[i].name;
+
+  Pebble.sendAppMessage(msg);
+
+//    selectedBoard(user.boards[e.itemIndex]);
+}
+
+function loadingFailed(txt, code) {
+  console.log("Loading failed "+code+": "+txt);
+}
