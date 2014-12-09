@@ -118,15 +118,32 @@ function loadBoards() {
   makeRequest('members/me?fields=username&boards=open&board_lists=open', loadedUser, loadingFailed);
 }
 
+
+function addData(msg, data) {
+  msg.numElements1 = data.length;
+  var msgIndex = 0;
+  for(var key in data) {
+    var array = data[key];
+    msg[msgIndex++] = key;
+    msg[msgIndex++] = array.length;
+    for(var i in array) {
+      var element = array[i];
+      msg[msgIndex++] = element;
+    }
+  }
+}
 function loadedUser(user) {
   globalData.user = user;
 
+  var data = {};
+  for(var i=0; i<user.boards.length;++i) {
+    data[user.boards[i].name] = user.boards[i].lists.map(function(e){return e.name});
+  }
+
   var msg = {};
   msg.type = MESSAGE_TYPE_BOARDS;
-  msg.numElements1 = user.boards.length;
-  for(var i=0; i<msg.numElements1;++i)
-    msg[i] = user.boards[i].name;
-
+  addData(msg, data);
+  
   Pebble.sendAppMessage(msg);
 
 //    selectedBoard(user.boards[e.itemIndex]);

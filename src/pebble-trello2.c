@@ -17,33 +17,76 @@ typedef struct
 } List;
 
 
-static void delete_list(List* l) {
+List* make_list(int elementCount) {
+  List* l = malloc(sizeof(List));
+  l->elementCount = elementCount;
+  l->elements = malloc(sizeof(char*)*elementCount);
+  return l;
+}
+
+static void empty_list(List* l) {
   if(l->elements == NULL)
     return;
   for(int i=0; i<l->elementCount; ++i)
     free(l->elements[i]);
   free(l->elements);
   l->elements = NULL;
+  l->elementCount = 0;
 }
+
+static void delete_list(List* l) {
+  empty_list(l);
+  free(l);
+}
+
+
+typedef struct
+{
+  List* list;
+  List** sublists;
+} SimpleTree;
+
+SimpleTree* make_simple_tree() {
+  SimpleTree* tree = malloc(sizeof(SimpleTree));
+  memset(tree, 0, sizeof(SimpleTree));
+  return tree;
+}
+
+static void empty_simple_tree(SimpleTree* tree) {
+  if(tree->list == NULL)
+    return;
+  for(int i=0; i<tree->list->elementCount; ++i) {
+    delete_list(tree->sublists[i]);
+  }
+  free(tree->sublists);
+  tree->sublists = NULL;
+  delete_list(tree->list);
+  tree->list = NULL;
+}
+
+// Boards -> lists
+static SimpleTree* firstTree;
+
+// cards -> checklists
+static SimpleTree* secondTree;
+
 
 //// CUSTOMWINDOW
 
 typedef struct {
   Window *window;
-  List content;
+  List* content;
   SimpleMenuLayer* simplemenu;
 } CustomWindow;
 
 void custom_window_create(CustomWindow* window) {
   window->window = window_create();
-  window->content.elementCount = 0;
-  window->content.elements = NULL;
+  window->content = NULL;
   window->simplemenu = NULL;
 }
 
 void custom_window_destroy(CustomWindow* window) {
   window_destroy(window->window);
-  delete_list(&window->content);
 }
 
 enum {
@@ -99,19 +142,39 @@ int32_t tuple_get_int(Tuple *t) {
   return -1;
 }
 
+char* tuple_get_str(Tuple *t){
+  return t->value->cstring;
+}
+
 void list_window_free(CustomWindow *window) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "TODO: implement freeing");
 }
 
-void createListWindow(DictionaryIterator *iter, CustomWindow *window, SimpleMenuLayerSelectCallback callback) {
-  list_window_free(window);
+void deserialize_simple_tree(DictionaryIterator *iter, SimpleTree* tree) {
+  empty_simple_tree(tree);
   Tuple *numElTuple = dict_find(iter, MESSAGE_NUMEL1_DICT_KEY);
   if(!numElTuple) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Message without numels!");
     return;
   }
-  int numberElements = tuple_get_int(numElTuple);
 
+  int numberElements = tuple_get_int(numElTuple);
+  tree->list = make_list(numberElements);
+  tree->sublists = malloc(sizeof(List*)*numberElements);
+  int msgPtr = 0;
+  for(int i=0; i<tree->list->elementCount; ++i) {
+    tree->list->elements[i] = strdup(tuple_get_str(dict_find(iter, msgPtr++)));
+    int sublistSize = tuple_get_int(dict_find(iter, msgPtr++));
+    tree->sublists[i] = make_list(sublistSize);
+    for(int j=0; j<sublistSize; j++){
+      tree->sublists[i]->elements[i] = strdup(tuple_get_str(dict_find(iter, msgPtr++)));
+    }
+  }
+}
+
+void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callback) {
+  list_window_free(window);
+/*
   SimpleMenuItem* boardMenuItems = malloc(sizeof(SimpleMenuItem)*numberElements);
   memset(boardMenuItems, 0, sizeof(SimpleMenuItem)*numberElements);
 
@@ -132,6 +195,7 @@ void createListWindow(DictionaryIterator *iter, CustomWindow *window, SimpleMenu
   window->simplemenu = simple_menu_layer_create(layer_get_frame(window_get_root_layer(window->window)), window->window, boardSection, 1, NULL);
   Layer *window_layer = window_get_root_layer(window->window);
   layer_add_child(window_layer, simple_menu_layer_get_layer(window->simplemenu));
+  */
 }
 
 static void menu_board_select_callback(int index, void *ctx) {
@@ -147,7 +211,9 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
   switch(tuple_get_int(type)) {
     case MESSAGE_TYPE_BOARDS:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Got type boards!");
-      createListWindow(iter, &windows[CWINDOW_BOARDS], menu_board_select_callback);
+      deserialize_simple_tree(iter, firstTree);
+      windows[CWINDOW_LOADING].content = firstTree->list;
+      createListWindow(&windows[CWINDOW_BOARDS], menu_board_select_callback);
       window_stack_push(windows[CWINDOW_BOARDS].window, true);
       window_stack_remove(windows[CWINDOW_LOADING].window, false);
       break;
@@ -190,6 +256,9 @@ static void loading_window_unload(Window *window) {
 
 static void init(void) {
   app_message_init();
+
+  firstTree = make_simple_tree();
+  secondTree = make_simple_tree();
   for(int i=0; i<CWINDOW_SIZE;++i) {
     custom_window_create(&windows[i]);
   }
