@@ -150,6 +150,17 @@ void list_window_free(CustomWindow *window) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "TODO: implement freeing");
 }
 
+
+void debug_print_tree(SimpleTree *tree) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "DEBUG TREE %X", (int)tree);
+  for(int i=0; i<tree->list->elementCount; ++i) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "tree->list[%i]: %s", i, tree->list->elements[i]);
+    for(int j=0; j< tree->sublists[i]->elementCount; ++j) {
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "tree->sublists[%i]->element[%i]: %s", i, j, tree->sublists[i]->elements[j]);
+    }
+  }
+}
+
 void deserialize_simple_tree(DictionaryIterator *iter, SimpleTree* tree) {
   empty_simple_tree(tree);
   Tuple *numElTuple = dict_find(iter, MESSAGE_NUMEL1_DICT_KEY);
@@ -168,12 +179,13 @@ void deserialize_simple_tree(DictionaryIterator *iter, SimpleTree* tree) {
     int sublistSize = tuple_get_int(dict_find(iter, msgPtr++));
     tree->sublists[i] = make_list(sublistSize);
     for(int j=0; j<sublistSize; j++){
-      tree->sublists[i]->elements[i] = strdup(tuple_get_str(dict_find(iter, msgPtr++)));
+      tree->sublists[i]->elements[j] = strdup(tuple_get_str(dict_find(iter, msgPtr++)));
     }
   }
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "2. tree->list %X", (int)tree->list);
 
+  debug_print_tree(tree);
 }
+
 
 void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callback, const char* title) {
   list_window_free(window);
@@ -192,7 +204,7 @@ void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callba
 
   for(int i =0; i< numberElements ;++i ) {
     const char* element = window->content->elements[i];
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "Board %i: %s", i, element);
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Element %i: %s", i, element);
     boardMenuItems[i].title = strdup(element);
     boardMenuItems[i].callback = callback;
   }
@@ -201,7 +213,26 @@ void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callba
   layer_add_child(window_layer, simple_menu_layer_get_layer(window->simplemenu));
 }
 
+static void very_short_vibe() {
+  static const uint32_t const segments[] = { 50 };
+  VibePattern pat = {
+    .durations = segments,
+    .num_segments = ARRAY_LENGTH(segments),
+  };
+  vibes_enqueue_custom_pattern(pat);
+}
+
+static void menu_list_select_callback(int index, void *ctx) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Todo: implement list callbac!");
+
+}
+
 static void menu_board_select_callback(int index, void *ctx) {
+  very_short_vibe();
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Menu board: selected index %i", index);
+  windows[CWINDOW_LISTS].content = firstTree->sublists[index];
+  createListWindow(&windows[CWINDOW_LISTS], menu_list_select_callback, firstTree->list->elements[index]);
+  window_stack_push(windows[CWINDOW_LISTS].window, true);
 }
 
 static void in_received_handler(DictionaryIterator *iter, void *context) {
