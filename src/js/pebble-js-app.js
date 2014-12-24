@@ -109,6 +109,14 @@ Pebble.addEventListener("appmessage",
 	function(e) {
 		console.log("JS: got message");
 		console.log(JSON.stringify(e.payload));
+
+    switch(e.payload.type) {
+      case MESSAGE_TYPE_SELECTED_CARD:
+        e.payload.boardix;
+        e.payload.listidx;
+        makeRequest('lists/'+list.id+'/cards?fields=id,name,checklists&checklists=all', loadedCards, loadingFailed);
+        break;
+    }
 	}
 );
 
@@ -120,10 +128,10 @@ function loadBoards() {
 
 
 function addData(msg, data) {
-  msg.numElements1 = 0;
+  msg.numElements = 0;
   var msgIndex = 0;
   for(var key in data) {
-    msg.numElements1 += 1;
+    msg.numElements += 1;
     var array = data[key];
     msg[msgIndex++] = key;
     msg[msgIndex++] = array.length;

@@ -64,8 +64,15 @@ static void empty_simple_tree(SimpleTree* tree) {
   tree->list = NULL;
 }
 
+void destroy_simple_tree(SimpleTree* tree) {
+  empty_simple_tree(tree);
+  free(tree);
+}
+
 // Boards -> lists
 static SimpleTree* firstTree;
+int selected_board_index, selected_list_index;
+
 
 // cards -> checklists
 static SimpleTree* secondTree;
@@ -77,16 +84,20 @@ typedef struct {
   Window *window;
   List* content;
   SimpleMenuLayer* simplemenu;
+  void* miscFree;
 } CustomWindow;
 
 void custom_window_create(CustomWindow* window) {
   window->window = window_create();
   window->content = NULL;
   window->simplemenu = NULL;
+  window->miscFree = NULL;
 }
 
 void custom_window_destroy(CustomWindow* window) {
-  window_destroy(window->window);
+  if(window->window)
+    window_destroy(window->window);
+  window->window = NULL;
 }
 
 enum {
@@ -116,7 +127,7 @@ TODO: show logo
   */
 
   loading_text_layer = text_layer_create((GRect) { .origin = { 0, 0}, .size = { bounds.size.w, 60 } });
-  text_layer_set_text(loading_text_layer, "Loading Boards....");
+  text_layer_set_text(loading_text_layer, (const char*)window_get_user_data(window));
   text_layer_set_overflow_mode(loading_text_layer, GTextOverflowModeWordWrap);
   text_layer_set_text_alignment(loading_text_layer, GTextAlignmentCenter);
   layer_add_child(window_layer, text_layer_get_layer(loading_text_layer));
@@ -146,10 +157,6 @@ char* tuple_get_str(Tuple *t){
   return t->value->cstring;
 }
 
-void list_window_free(CustomWindow *window) {
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "TODO: implement freeing");
-}
-
 
 void debug_print_tree(SimpleTree *tree) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "DEBUG TREE %X", (int)tree);
@@ -163,7 +170,7 @@ void debug_print_tree(SimpleTree *tree) {
 
 void deserialize_simple_tree(DictionaryIterator *iter, SimpleTree* tree) {
   empty_simple_tree(tree);
-  Tuple *numElTuple = dict_find(iter, MESSAGE_NUMEL1_DICT_KEY);
+  Tuple *numElTuple = dict_find(iter, MESSAGE_NUMEL_DICT_KEY);
   if(!numElTuple) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Message without numels!");
     return;
@@ -187,17 +194,49 @@ void deserialize_simple_tree(DictionaryIterator *iter, SimpleTree* tree) {
 }
 
 
+static void list_window_unload(Window *window) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "list_window_unload: %X", (int)window);
+  CustomWindow* cwindow = NULL;
+  for(int i = CWINDOW_LOADING; i< CWINDOW_SIZE;++i) {
+    if(windows[i].window == window) {
+      cwindow = &windows[i];
+      break;
+    }
+  }
+
+  if(!cwindow) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "list_window_unload: Can't find custom window");
+    return;
+  }
+
+  layer_remove_from_parent(simple_menu_layer_get_layer(cwindow->simplemenu));
+  simple_menu_layer_destroy(cwindow->simplemenu);
+  cwindow->simplemenu = NULL;
+
+  if(cwindow->miscFree) {
+    free(cwindow->miscFree);
+    cwindow->miscFree = NULL;
+  }
+}
+
 void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callback, const char* title) {
-  list_window_free(window);
+
+  window_set_window_handlers(window->window, (WindowHandlers) {
+  .unload = list_window_unload,
+  });
+
+
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Window %X", (int)window);
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Content %X", (int)window->content);
   APP_LOG(APP_LOG_LEVEL_DEBUG, "numberElements %i", window->content->elementCount);
   int numberElements = window->content->elementCount;
-  SimpleMenuItem* boardMenuItems = malloc(sizeof(SimpleMenuItem)* numberElements);
+
+  window->miscFree = malloc(sizeof(SimpleMenuSection) + sizeof(SimpleMenuItem)* numberElements);
+  SimpleMenuItem* boardMenuItems = window->miscFree + sizeof(SimpleMenuSection);
   memset(boardMenuItems, 0, sizeof(SimpleMenuItem)*numberElements);
 
 
-  SimpleMenuSection* boardSection = malloc(sizeof(SimpleMenuSection));
+  SimpleMenuSection* boardSection = window->miscFree;
   boardSection->items = boardMenuItems;
   boardSection->num_items = numberElements;
   boardSection->title = title;
@@ -223,12 +262,44 @@ static void very_short_vibe() {
 }
 
 static void menu_list_select_callback(int index, void *ctx) {
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "Todo: implement list callbac!");
+  window_set_user_data(windows[CWINDOW_LOADING].window, "Loading Cards...");
+  window_stack_push(windows[CWINDOW_LOADING].window, true);
 
+  // remove boards and lists from stack: memory constraints
+  window_stack_remove(windows[CWINDOW_BOARDS].window, false);
+  window_stack_remove(windows[CWINDOW_LISTS].window, false);
+  custom_window_destroy(&windows[CWINDOW_BOARDS]);
+  custom_window_destroy(&windows[CWINDOW_LISTS]);
+  destroy_simple_tree(firstTree);
+  firstTree = NULL;
+  selected_list_index = index;
+
+
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+  if (iter == NULL) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at sending");
+    return;
+  }
+
+
+  Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_SELECTED_CARD);
+  dict_write_tuplet(iter, &tuple);
+
+  Tuplet tuple2 = TupletInteger(MESSAGE_BOARDIDX_DICT_KEY, selected_board_index);
+  dict_write_tuplet(iter, &tuple2);
+
+  Tuplet tuple3 = TupletInteger(MESSAGE_LISTIDX_DICT_KEY, selected_list_index);
+  dict_write_tuplet(iter, &tuple3);
+
+  dict_write_end(iter);
+
+  app_message_outbox_send();
 }
 
 static void menu_board_select_callback(int index, void *ctx) {
   very_short_vibe();
+  selected_board_index = index;
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Menu board: selected index %i", index);
   windows[CWINDOW_LISTS].content = firstTree->sublists[index];
   createListWindow(&windows[CWINDOW_LISTS], menu_list_select_callback, firstTree->list->elements[index]);
@@ -296,6 +367,7 @@ static void init(void) {
   for(int i=0; i<CWINDOW_SIZE;++i) {
     custom_window_create(&windows[i]);
   }
+  window_set_user_data(windows[CWINDOW_LOADING].window, "Loading Boards...");
   window_set_window_handlers(windows[CWINDOW_LOADING].window, (WindowHandlers) {
     .load = loading_window_load,
     .unload = loading_window_unload,
@@ -308,6 +380,11 @@ static void deinit(void) {
   for(int i=0; i<CWINDOW_SIZE;++i) {
     custom_window_destroy(&windows[i]);
   }
+
+  if(firstTree)
+    destroy_simple_tree(firstTree);
+  if(secondTree)
+    destroy_simple_tree(secondTree);
 }
 
 int main(void) {

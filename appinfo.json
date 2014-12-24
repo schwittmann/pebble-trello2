@@ -11,8 +11,9 @@
   "appKeys": {
     "type": 1000000,
     "value": 1000001,
-    "numElements1": 1000002,
-    "numElements2": 1000003
+    "numElements": 1000002,
+    "boardidx":1000003,
+    "listidx":1000004
   },
   "resources": {
     "media": []
