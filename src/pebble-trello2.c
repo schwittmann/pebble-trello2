@@ -159,6 +159,7 @@ void deserialize_simple_tree(DictionaryIterator *iter, SimpleTree* tree) {
   }
 
   int numberElements = tuple_get_int(numElTuple);
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Number of elements in first list: %i", numberElements);
   tree->list = make_list(numberElements);
   tree->sublists = malloc(sizeof(List*)*numberElements);
   int msgPtr = 0;
@@ -170,32 +171,34 @@ void deserialize_simple_tree(DictionaryIterator *iter, SimpleTree* tree) {
       tree->sublists[i]->elements[i] = strdup(tuple_get_str(dict_find(iter, msgPtr++)));
     }
   }
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "2. tree->list %X", (int)tree->list);
+
 }
 
-void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callback) {
+void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callback, const char* title) {
   list_window_free(window);
-/*
-  SimpleMenuItem* boardMenuItems = malloc(sizeof(SimpleMenuItem)*numberElements);
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Window %X", (int)window);
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Content %X", (int)window->content);
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "numberElements %i", window->content->elementCount);
+  int numberElements = window->content->elementCount;
+  SimpleMenuItem* boardMenuItems = malloc(sizeof(SimpleMenuItem)* numberElements);
   memset(boardMenuItems, 0, sizeof(SimpleMenuItem)*numberElements);
 
 
   SimpleMenuSection* boardSection = malloc(sizeof(SimpleMenuSection));
   boardSection->items = boardMenuItems;
   boardSection->num_items = numberElements;
-  boardSection->title = NULL;
+  boardSection->title = title;
 
-  for(int i =0; ;++i ) {
-    Tuple *boardTuple = dict_find(iter, i);
-    if(!boardTuple)
-      break;
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "Board %i: %s", i, boardTuple->value->cstring);
-    boardMenuItems[i].title = strdup(boardTuple->value->cstring);
+  for(int i =0; i< numberElements ;++i ) {
+    const char* element = window->content->elements[i];
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Board %i: %s", i, element);
+    boardMenuItems[i].title = strdup(element);
     boardMenuItems[i].callback = callback;
   }
   window->simplemenu = simple_menu_layer_create(layer_get_frame(window_get_root_layer(window->window)), window->window, boardSection, 1, NULL);
   Layer *window_layer = window_get_root_layer(window->window);
   layer_add_child(window_layer, simple_menu_layer_get_layer(window->simplemenu));
-  */
 }
 
 static void menu_board_select_callback(int index, void *ctx) {
@@ -212,8 +215,8 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
     case MESSAGE_TYPE_BOARDS:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Got type boards!");
       deserialize_simple_tree(iter, firstTree);
-      windows[CWINDOW_LOADING].content = firstTree->list;
-      createListWindow(&windows[CWINDOW_BOARDS], menu_board_select_callback);
+      windows[CWINDOW_BOARDS].content = firstTree->list;
+      createListWindow(&windows[CWINDOW_BOARDS], menu_board_select_callback, "Boards");
       window_stack_push(windows[CWINDOW_BOARDS].window, true);
       window_stack_remove(windows[CWINDOW_LOADING].window, false);
       break;

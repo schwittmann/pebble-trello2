@@ -26,7 +26,7 @@ function makeRequest(urlpath, success, fail, verb) {
         ret += utftext[i];
       }
       if (utftext.charCodeAt(i) > 127) {
-        console.log("charcode:"+utftext.charCodeAt(i));
+        //console.log("charcode:"+utftext.charCodeAt(i));
       }
     }
     return ret;
@@ -41,14 +41,14 @@ function makeRequest(urlpath, success, fail, verb) {
         return;
     if(req.status == 200) {
       var decoded;
-      console.log("Pre decode:"+window.btoa(req.responseText));
+      //console.log("Pre decode:"+window.btoa(req.responseText));
       try {
         decoded = decodeUtf8(req.responseText);
       } catch(err) {
         console.log("decoding failed:"+err);
         return;
       }
-      console.log("got decoded:"+decoded);
+      //console.log("got decoded:"+decoded);
       success(JSON.parse(decoded));
     } else {
       console.log("Http request failed :("+ req.responseText);
@@ -120,9 +120,10 @@ function loadBoards() {
 
 
 function addData(msg, data) {
-  msg.numElements1 = data.length;
+  msg.numElements1 = 0;
   var msgIndex = 0;
   for(var key in data) {
+    msg.numElements1 += 1;
     var array = data[key];
     msg[msgIndex++] = key;
     msg[msgIndex++] = array.length;
