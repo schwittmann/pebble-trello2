@@ -18,7 +18,28 @@
     "checklistidx":1000006
   },
   "resources": {
-    "media": []
+    "media": [
+      {
+        "type": "png",
+        "name": "TRELLO_BOX",
+        "file": "images/trello-box.png"
+      },
+      {
+        "type": "png",
+        "name": "TRELLO_CHECKED",
+        "file": "images/trello-checked.png"
+      },
+      {
+        "type": "png",
+        "name": "TRELLO_PENDING",
+        "file": "images/trello-pending.png"
+      },
+      {
+        "type": "png",
+        "name": "TRELLO_LOGO",
+        "file": "images/trello-logo.png"
+      }
+    ]
   },
   "capabilities": [
     "configurable"

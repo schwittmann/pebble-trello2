@@ -13,14 +13,16 @@ char* strdup(const char* in) {
 typedef struct
 {
   char** elements;
+  bool*  elementState;
   int elementCount;
 } List;
 
 
 List* make_list(int elementCount) {
-  List* l = malloc(sizeof(List));
+  List* l = malloc(sizeof(List) + sizeof(char*)*elementCount);
   l->elementCount = elementCount;
-  l->elements = malloc(sizeof(char*)*elementCount);
+  l->elements = sizeof(List)+ (void*)l;
+  l->elementState = NULL;
   return l;
 }
 
@@ -29,12 +31,14 @@ static void empty_list(List* l) {
     return;
   for(int i=0; i<l->elementCount; ++i)
     free(l->elements[i]);
-  free(l->elements);
+  if(l->elementState)
+    free(l->elementState);
+  l->elementState = NULL;
   l->elements = NULL;
   l->elementCount = 0;
 }
 
-static void delete_list(List* l) {
+static void destroy_list(List* l) {
   empty_list(l);
   free(l);
 }
@@ -56,11 +60,11 @@ static void empty_simple_tree(SimpleTree* tree) {
   if(tree->list == NULL)
     return;
   for(int i=0; i<tree->list->elementCount; ++i) {
-    delete_list(tree->sublists[i]);
+    destroy_list(tree->sublists[i]);
   }
   free(tree->sublists);
   tree->sublists = NULL;
-  delete_list(tree->list);
+  destroy_list(tree->list);
   tree->list = NULL;
 }
 
@@ -76,6 +80,8 @@ int selected_board_index, selected_list_index, selected_card_index, selected_che
 
 // cards -> checklists
 static SimpleTree* secondTree;
+
+static List* checklist = NULL;
 
 
 //// CUSTOMWINDOW
@@ -112,6 +118,20 @@ enum {
 
 
 static CustomWindow windows[CWINDOW_SIZE];
+
+
+#define NUMBER_IMAGES  4
+
+static uint32_t TRELLO_ICONS[NUMBER_IMAGES] = {
+  RESOURCE_ID_TRELLO_BOX,
+  RESOURCE_ID_TRELLO_CHECKED,
+  RESOURCE_ID_TRELLO_PENDING,
+  RESOURCE_ID_TRELLO_LOGO
+};
+
+
+static GBitmap* loadedBitmaps[NUMBER_IMAGES];
+
 
 
 static TextLayer *loading_text_layer;
@@ -167,6 +187,30 @@ void debug_print_tree(SimpleTree *tree) {
     }
   }
 }
+
+void deserialize_checklist(DictionaryIterator *iter, List** listRef) {
+  Tuple *numElTuple = dict_find(iter, MESSAGE_NUMEL_DICT_KEY);
+  if(!numElTuple) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Message without numels!");
+    return;
+  }
+  int numberElements = tuple_get_int(numElTuple);
+
+
+  if(*listRef != NULL) {
+    destroy_list(*listRef);
+  }
+
+  *listRef = make_list(numberElements);
+  (*listRef)->elementState = malloc(sizeof(bool)*numberElements);
+
+  List* list = *listRef;
+  for(int i=0; i<numberElements; ++i) {
+    list->elements[i] = strdup(tuple_get_str(dict_find(iter, 2*i)));
+    list->elementState[i] = tuple_get_int(dict_find(iter, 2*i+1));
+  }
+}
+
 
 void deserialize_simple_tree(DictionaryIterator *iter, SimpleTree* tree) {
   empty_simple_tree(tree);
@@ -225,10 +269,7 @@ void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callba
   .unload = list_window_unload,
   });
 
-
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "Window %X", (int)window);
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "Content %X", (int)window->content);
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "numberElements %i", window->content->elementCount);
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Creating list window with %i Elements", window->content->elementCount);
   int numberElements = window->content->elementCount;
 
   window->miscFree = malloc(sizeof(SimpleMenuSection) + sizeof(SimpleMenuItem)* numberElements);
@@ -246,6 +287,8 @@ void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callba
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Element %i: %s", i, element);
     boardMenuItems[i].title = strdup(element);
     boardMenuItems[i].callback = callback;
+    if(window->content->elementState)
+      boardMenuItems[i].icon = loadedBitmaps[window->content->elementState[i]];
   }
   window->simplemenu = simple_menu_layer_create(layer_get_frame(window_get_root_layer(window->window)), window->window, boardSection, 1, NULL);
   Layer *window_layer = window_get_root_layer(window->window);
@@ -262,6 +305,7 @@ static void very_short_vibe() {
 }
 
 static void menu_list_select_callback(int index, void *ctx) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Menu list: selected index %i", index);
   window_set_user_data(windows[CWINDOW_LOADING].window, "Loading Cards...");
   window_stack_push(windows[CWINDOW_LOADING].window, true);
 
@@ -283,14 +327,14 @@ static void menu_list_select_callback(int index, void *ctx) {
   }
 
 
-  Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_SELECTED_LIST);
-  dict_write_tuplet(iter, &tuple);
+  Tuplet tuples[3] = {
+    TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_SELECTED_LIST),
+    TupletInteger(MESSAGE_BOARDIDX_DICT_KEY, selected_board_index),
 
-  Tuplet tuple2 = TupletInteger(MESSAGE_BOARDIDX_DICT_KEY, selected_board_index);
-  dict_write_tuplet(iter, &tuple2);
+  TupletInteger(MESSAGE_LISTIDX_DICT_KEY, selected_list_index)};
 
-  Tuplet tuple3 = TupletInteger(MESSAGE_LISTIDX_DICT_KEY, selected_list_index);
-  dict_write_tuplet(iter, &tuple3);
+  for(int i=0 ;i<3;++i)
+    dict_write_tuplet(iter, &tuples[i]);
 
   dict_write_end(iter);
 
@@ -333,16 +377,22 @@ static void menu_checklists_select_callback(int index, void *ctx) {
   app_message_outbox_send();
 }
 
+
+static void menu_checklist_item_select_callback(int index, void* ctx) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Checklist: selected item %i", index);
+}
+
 static void menu_cards_select_callback(int index, void *ctx) {
   very_short_vibe();
   selected_card_index = index;
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Cards: selected index %i", index);
   windows[CWINDOW_CHECKLISTS].content = secondTree->sublists[index];
   createListWindow(&windows[CWINDOW_CHECKLISTS], menu_checklists_select_callback, secondTree->list->elements[index]);
-  window_stack_push(windows[CWINDOW_CHECKLISTS].window, true);
-
   if(secondTree->sublists[index]->elementCount == 1) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Only one checklist, selecting...");
     menu_checklists_select_callback(0, NULL);
+  } else {
+    window_stack_push(windows[CWINDOW_CHECKLISTS].window, true);
   }
 }
 
@@ -368,10 +418,12 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       deserialize_simple_tree(iter, firstTree);
       windows[CWINDOW_BOARDS].content = firstTree->list;
       createListWindow(&windows[CWINDOW_BOARDS], menu_board_select_callback, "Boards");
-      window_stack_push(windows[CWINDOW_BOARDS].window, true);
       window_stack_remove(windows[CWINDOW_LOADING].window, false);
       if(firstTree->list->elementCount == 1) {
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Only one board, selecting...");
         menu_board_select_callback(0, NULL);
+      } else {
+        window_stack_push(windows[CWINDOW_BOARDS].window, true);
       }
       break;
     case MESSAGE_TYPE_CARDS:
@@ -379,11 +431,21 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       deserialize_simple_tree(iter, secondTree);
       windows[CWINDOW_CARDS].content = secondTree->list;
       createListWindow(&windows[CWINDOW_CARDS], menu_cards_select_callback, "Cards");
-      window_stack_push(windows[CWINDOW_CARDS].window, true);
       window_stack_remove(windows[CWINDOW_LOADING].window, false);
       if(secondTree->list->elementCount == 1) {
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Only one card, selecting...");
         menu_cards_select_callback(0, NULL);
+      } else {
+        window_stack_push(windows[CWINDOW_CARDS].window, true);
       }
+      break;
+    case MESSAGE_TYPE_CHECKLIST:
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Got type checklist!");
+      deserialize_checklist(iter, &checklist);
+      windows[CWINDOW_CHECKLIST].content = checklist;
+      createListWindow(&windows[CWINDOW_CHECKLIST], menu_checklist_item_select_callback, "Checklist");
+      window_stack_push(windows[CWINDOW_CHECKLIST].window, true);
+      window_stack_remove(windows[CWINDOW_LOADING].window, false);
       break;
     case MESSAGE_TYPE_INIT:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Got type init!");
@@ -437,6 +499,10 @@ static void init(void) {
   });
   const bool animated = true;
   window_stack_push(windows[CWINDOW_LOADING].window, animated);
+
+  for(int i=0; i< NUMBER_IMAGES; ++i) {
+    loadedBitmaps[i] = gbitmap_create_with_resource(TRELLO_ICONS[i]);
+  }
 }
 
 static void deinit(void) {
@@ -448,6 +514,12 @@ static void deinit(void) {
     destroy_simple_tree(firstTree);
   if(secondTree)
     destroy_simple_tree(secondTree);
+  if(checklist)
+    destroy_list(checklist);
+
+  for(int i=0; i< NUMBER_IMAGES; ++i) {
+    gbitmap_destroy(loadedBitmaps[i]);
+  }
 }
 
 int main(void) {
