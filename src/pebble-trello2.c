@@ -71,7 +71,7 @@ void destroy_simple_tree(SimpleTree* tree) {
 
 // Boards -> lists
 static SimpleTree* firstTree;
-int selected_board_index, selected_list_index;
+int selected_board_index, selected_list_index, selected_card_index, selected_checklist_index;
 
 
 // cards -> checklists
@@ -283,7 +283,7 @@ static void menu_list_select_callback(int index, void *ctx) {
   }
 
 
-  Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_SELECTED_CARD);
+  Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_SELECTED_LIST);
   dict_write_tuplet(iter, &tuple);
 
   Tuplet tuple2 = TupletInteger(MESSAGE_BOARDIDX_DICT_KEY, selected_board_index);
@@ -295,6 +295,55 @@ static void menu_list_select_callback(int index, void *ctx) {
   dict_write_end(iter);
 
   app_message_outbox_send();
+}
+
+static void menu_checklists_select_callback(int index, void *ctx) {
+  very_short_vibe();
+  selected_checklist_index = index;
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Checklists: selected index %i", index);
+
+  window_set_user_data(windows[CWINDOW_LOADING].window, "Loading Checklist...");
+  window_stack_push(windows[CWINDOW_LOADING].window, true);
+
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+  if (iter == NULL) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at sending");
+    return;
+  }
+
+
+  Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_SELECTED_CHECKLIST);
+  dict_write_tuplet(iter, &tuple);
+
+  Tuplet tuple2 = TupletInteger(MESSAGE_BOARDIDX_DICT_KEY, selected_board_index);
+  dict_write_tuplet(iter, &tuple2);
+
+  Tuplet tuple3 = TupletInteger(MESSAGE_LISTIDX_DICT_KEY, selected_list_index);
+  dict_write_tuplet(iter, &tuple3);
+
+  Tuplet tuple4 = TupletInteger(MESSAGE_CARDIDX_DICT_KEY, selected_card_index);
+  dict_write_tuplet(iter, &tuple4);
+
+  Tuplet tuple5 = TupletInteger(MESSAGE_CHECKLISTIDX_DICT_KEY, selected_checklist_index);
+  dict_write_tuplet(iter, &tuple5);
+
+  dict_write_end(iter);
+
+  app_message_outbox_send();
+}
+
+static void menu_cards_select_callback(int index, void *ctx) {
+  very_short_vibe();
+  selected_card_index = index;
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Cards: selected index %i", index);
+  windows[CWINDOW_CHECKLISTS].content = secondTree->sublists[index];
+  createListWindow(&windows[CWINDOW_CHECKLISTS], menu_checklists_select_callback, secondTree->list->elements[index]);
+  window_stack_push(windows[CWINDOW_CHECKLISTS].window, true);
+
+  if(secondTree->sublists[index]->elementCount == 1) {
+    menu_checklists_select_callback(0, NULL);
+  }
 }
 
 static void menu_board_select_callback(int index, void *ctx) {
@@ -321,6 +370,20 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       createListWindow(&windows[CWINDOW_BOARDS], menu_board_select_callback, "Boards");
       window_stack_push(windows[CWINDOW_BOARDS].window, true);
       window_stack_remove(windows[CWINDOW_LOADING].window, false);
+      if(firstTree->list->elementCount == 1) {
+        menu_board_select_callback(0, NULL);
+      }
+      break;
+    case MESSAGE_TYPE_CARDS:
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Got type cards!");
+      deserialize_simple_tree(iter, secondTree);
+      windows[CWINDOW_CARDS].content = secondTree->list;
+      createListWindow(&windows[CWINDOW_CARDS], menu_cards_select_callback, "Cards");
+      window_stack_push(windows[CWINDOW_CARDS].window, true);
+      window_stack_remove(windows[CWINDOW_LOADING].window, false);
+      if(secondTree->list->elementCount == 1) {
+        menu_cards_select_callback(0, NULL);
+      }
       break;
     case MESSAGE_TYPE_INIT:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Got type init!");

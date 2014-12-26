@@ -13,7 +13,9 @@
     "value": 1000001,
     "numElements": 1000002,
     "boardidx":1000003,
-    "listidx":1000004
+    "listidx":1000004,
+    "cardidx":1000005,
+    "checklistidx":1000006
   },
   "resources": {
     "media": []
