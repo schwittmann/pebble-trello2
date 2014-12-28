@@ -17,7 +17,8 @@
     "cardidx":1000005,
     "checklistidx":1000006,
     "itemidx":     1000007,
-    "itemstate":   1000008
+    "itemstate":   1000008,
+    "checklistid": 1000009
   },
   "resources": {
     "media": [

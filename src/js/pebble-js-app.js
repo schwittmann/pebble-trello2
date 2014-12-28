@@ -6,7 +6,7 @@ var MESSAGE_TYPE_CARDS = 3;
 var MESSAGE_TYPE_SELECTED_CHECKLIST = 4;
 var MESSAGE_TYPE_CHECKLIST = 5;
 var MESSAGE_TYPE_SELECTED_ITEM = 6;
-
+var MESSAGE_TYPE_ITEM_STATE_CHANGED = 7;
 
 
 var loadedInit = false;
@@ -57,6 +57,7 @@ function makeRequest(urlpath, success, fail, verb) {
       success(DEBUG_DATA[urlpath]);
     else
       console.log("DEBUG_DATA not found for urlpath "+urlpath);
+    fail("no such debug data", 404);
     return;
   }
   req.open(verb, 'https://api.trello.com/1/'+urlpath+'&key=e3227833b55cbe24bfedd05e5ec870dd&token='+localStorage.getItem("token"));
@@ -139,26 +140,47 @@ Pebble.addEventListener("appmessage",
       case MESSAGE_TYPE_SELECTED_LIST: 
         console.log("Got type MESSAGE_TYPE_SELECTED_LIST");
         console.log("Selected boardidx:"+e.payload.boardidx);
-        var board = globalData.user.boards[e.payload.boardidx];
-        var list = board.lists[e.payload.listidx];
-        makeRequest('lists/'+list.id+'/cards?fields=id,name,checklists&checklists=all', loadedCards, loadingFailed);
+        globalData.activeBoard = globalData.user.boards[e.payload.boardidx];
+        globalData.activeList = globalData.activeBoard.lists[e.payload.listidx];
+        makeRequest('lists/'+globalData.activeList.id+'/cards?fields=id,name,checklists&checklists=all', loadedCards, loadingFailed);
         break;
       case MESSAGE_TYPE_SELECTED_CHECKLIST:
         console.log("Got type MESSAGE_TYPE_SELECTED_CHECKLIST");
-        var checklist = globalData.cards[e.payload.cardidx].checklists[e.payload.checklistidx];
-        sendChecklist(checklist);
+        globalData.activeCard = globalData.cards[e.payload.cardidx];
+        globalData.activeChecklist = globalData.activeCard.checklists[e.payload.checklistidx];
+        sendActiveChecklist();
         break;
       case MESSAGE_TYPE_SELECTED_ITEM:
         console.log("Got type MESSAGE_TYPE_SELECTED_ITEM");
-        var checklistitem = globalData.checklist[e.payload.itemidx];
-        console.log("toggled item "+checklistitem.name+" to "+e.payload.itemstate);
+        var item = globalData.activeChecklist[e.payload.itemidx];
+        console.log("toggled item "+item.name+" to "+e.payload.itemstate);
+
+        var newState = e.payload.itemstate?"complete":"incomplete";
+        var checklistid = globalData.activeChecklist.id;
+/*        TODO: get watch indices, send in update, prevent updateing wrong checklist
+        Other Idea: checklist with id!*/
+        function sendResult(hasFailed) {
+          var msg = {};
+          msg.type = MESSAGE_TYPE_ITEM_STATE_CHANGED;
+          msg.checklistid = checklistid;
+          msg.itemidx = e.payload.itemidx;
+          var state = e.payload.itemstate;
+          if(hasFailed)
+            state = (state+1)%2;
+          msg.itemstate = state;
+          Pebble.sendAppMessage(msg);
+        }
+        makeRequest("cards/"+globalData.activeCard.id+"/checklist/"+globalData.activeChecklist.id+"/checkItem/"+item.id+"/state?value="+newState, sendResult, function() {
+            sendResult(true);
+            loadingFailed();
+          }, "PUT");
         break;
     }
 	}
 );
 
-function sendChecklist(checklist) {
-  globalData.checklist = checklist;
+function sendActiveChecklist() {
+  var checklist = globalData.activeChecklist;
   console.log("Sending checklist "+JSON.stringify(checklist));
   var msg = {};
   msg.type = MESSAGE_TYPE_CHECKLIST;
@@ -168,6 +190,8 @@ function sendChecklist(checklist) {
     msg[2*i] = item.name;
     msg[2*i+1] = item.state == 'incomplete'?0:1;
   }
+
+  msg.checklistid = globalData.activeChecklist.id;
 
   Pebble.sendAppMessage(msg);
 }
@@ -235,8 +259,6 @@ function loadedUser(user) {
   addData(msg, data);
   
   Pebble.sendAppMessage(msg);
-
-//    selectedBoard(user.boards[e.itemIndex]);
 }
 
 function loadingFailed(txt, code) {

@@ -21,11 +21,23 @@ enum ElementState{
   STATE_PENDING_C  = 3,
 };
 
+typedef enum ElementState ElementState;
+
+
+ElementState intStateToState(int state) {
+  if(state)
+    return STATE_CHECKED;
+  return STATE_UNCHECKED;
+}
+
 bool isCheckedState(ElementState s) {
   return s == STATE_CHECKED || s == STATE_PENDING_C;
 }
 
-typedef enum ElementState ElementState;
+bool isPendingState(ElementState s) {
+  return s == STATE_PENDING_C || s == STATE_PENDING_UC;
+}
+
 
 typedef struct
 {
@@ -100,6 +112,8 @@ static SimpleTree* secondTree;
 
 static List* checklist = NULL;
 
+static char* checklistID = NULL;
+
 
 //// CUSTOMWINDOW
 
@@ -107,14 +121,14 @@ typedef struct {
   Window *window;
   List* content;
   SimpleMenuLayer* simplemenu;
-  void* miscFree;
+  SimpleMenuItem* simpleMenuItem;
 } CustomWindow;
 
 void custom_window_create(CustomWindow* window) {
   window->window = window_create();
   window->content = NULL;
   window->simplemenu = NULL;
-  window->miscFree = NULL;
+  window->simpleMenuItem = NULL;
 }
 
 void custom_window_destroy(CustomWindow* window) {
@@ -174,7 +188,6 @@ GBitmap* stateToIcon(ElementState s) {
 }
 
 static TextLayer *loading_text_layer;
-static bool wasFirstMsg;
 
 static void loading_window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
@@ -246,8 +259,12 @@ void deserialize_checklist(DictionaryIterator *iter, List** listRef) {
   List* list = *listRef;
   for(int i=0; i<numberElements; ++i) {
     list->elements[i] = strdup(tuple_get_str(dict_find(iter, 2*i)));
-    list->elementState[i] = tuple_get_int(dict_find(iter, 2*i+1));
+    list->elementState[i] = intStateToState(tuple_get_int(dict_find(iter, 2*i+1)));
   }
+  if(checklistID)
+    free(checklistID);
+  checklistID = strdup(tuple_get_str(dict_find(iter, MESSAGE_CHECKLISTID_DICT_KEY)));
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Checklistid: %s", checklistID);
 }
 
 
@@ -296,9 +313,9 @@ static void list_window_unload(Window *window) {
   simple_menu_layer_destroy(cwindow->simplemenu);
   cwindow->simplemenu = NULL;
 
-  if(cwindow->miscFree) {
-    free(cwindow->miscFree);
-    cwindow->miscFree = NULL;
+  if(cwindow->simpleMenuItem) {
+    free(cwindow->simpleMenuItem);
+    cwindow->simpleMenuItem = NULL;
   }
 }
 
@@ -311,12 +328,12 @@ void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callba
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Creating list window with %i Elements", window->content->elementCount);
   int numberElements = window->content->elementCount;
 
-  window->miscFree = malloc(sizeof(SimpleMenuSection) + sizeof(SimpleMenuItem)* numberElements);
-  SimpleMenuItem* boardMenuItems = window->miscFree + sizeof(SimpleMenuSection);
+  window->simpleMenuItem = malloc(sizeof(SimpleMenuSection) + sizeof(SimpleMenuItem)* numberElements);
+  SimpleMenuItem* boardMenuItems = window->simpleMenuItem;
   memset(boardMenuItems, 0, sizeof(SimpleMenuItem)*numberElements);
 
 
-  SimpleMenuSection* boardSection = window->miscFree;
+  SimpleMenuSection* boardSection = ((void*)window->simpleMenuItem)+sizeof(SimpleMenuItem)* numberElements;
   boardSection->items = boardMenuItems;
   boardSection->num_items = numberElements;
   boardSection->title = title;
@@ -329,7 +346,7 @@ void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callba
     if(window->content->elementState)
       boardMenuItems[i].icon = stateToIcon(window->content->elementState[i]);
   }
-  window->simplemenu = simple_menu_layer_create(layer_get_frame(window_get_root_layer(window->window)), window->window, boardSection, 1, boardMenuItems);
+  window->simplemenu = simple_menu_layer_create(layer_get_frame(window_get_root_layer(window->window)), window->window, boardSection, 1, window);
   Layer *window_layer = window_get_root_layer(window->window);
   layer_add_child(window_layer, simple_menu_layer_get_layer(window->simplemenu));
 }
@@ -360,9 +377,9 @@ static void menu_list_select_callback(int index, void *ctx) {
 
 
   DictionaryIterator *iter;
-  app_message_outbox_begin(&iter);
+  AppMessageResult result = app_message_outbox_begin(&iter);
   if (iter == NULL) {
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at sending");
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at sending. Result: %u", result);
     return;
   }
 
@@ -390,9 +407,9 @@ static void menu_checklists_select_callback(int index, void *ctx) {
   window_stack_push(windows[CWINDOW_LOADING].window, true);
 
   DictionaryIterator *iter;
-  app_message_outbox_begin(&iter);
+  AppMessageResult result = app_message_outbox_begin(&iter);
   if (iter == NULL) {
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at sending");
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at sending. Result: %u", result);
     return;
   }
 
@@ -428,11 +445,17 @@ ElementState toggleState(ElementState oldState) {
 
 static void menu_checklist_item_select_callback(int index, void* ctx) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Checklist: selected item %i", index);
+
+  if(isPendingState(checklist->elementState[index])) {
+    vibes_double_pulse();
+    return;
+  }
+
   very_short_vibe();
   DictionaryIterator *iter;
-  app_message_outbox_begin(&iter);
+  AppMessageResult result = app_message_outbox_begin(&iter);
   if (iter == NULL) {
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at sending");
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at sending. Result: %u", result);
     return;
   }
 
@@ -440,7 +463,8 @@ static void menu_checklist_item_select_callback(int index, void* ctx) {
 
   checklist->elementState[index] = toggleState(checklist->elementState[index]);
 
-  SimpleMenuItem *items = ctx;
+  CustomWindow *cwindow = ctx;
+  SimpleMenuItem* items = cwindow->simpleMenuItem;
   items[index].icon = stateToIcon(checklist->elementState[index]);
   layer_mark_dirty(simple_menu_layer_get_layer(windows[CWINDOW_CHECKLIST].simplemenu));
 
@@ -530,6 +554,22 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
         text_layer_set_text(loading_text_layer, "Token missing. Please open settings on phone.");
       }
       break;
+    case MESSAGE_TYPE_ITEM_STATE_CHANGED: {
+      char* receivedChecklistId = tuple_get_str(dict_find(iter, MESSAGE_CHECKLISTID_DICT_KEY));
+      if(strcmp(receivedChecklistId, checklistID) != 0) {
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Got outdated checklist update. %s, expected %s", receivedChecklistId, checklistID);
+        return;
+      }
+
+      int itemidx = tuple_get_int(dict_find(iter, MESSAGE_ITEMIDX_KEY));
+      int state = tuple_get_int(dict_find(iter, MESSAGE_ITEMSTATE_KEY));
+
+      checklist->elementState[itemidx] = intStateToState(state);
+
+      windows[CWINDOW_CHECKLIST].simpleMenuItem[itemidx].icon = stateToIcon(checklist->elementState[itemidx]);
+      layer_mark_dirty(simple_menu_layer_get_layer(windows[CWINDOW_CHECKLIST].simplemenu));
+      break;
+    }
   }
 }
 
@@ -538,12 +578,7 @@ static void in_dropped_handler(AppMessageResult reason, void *context) {
 }
 
 static void out_failed_handler(DictionaryIterator *failed, AppMessageResult reason, void *context) {
-  if (wasFirstMsg ) {
-  }
-  else {
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "App Message Failed to Send!");
-  }
-  wasFirstMsg = false;
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "App Message Failed to Send! Reason:%u", reason);
 }
 
 static void app_message_init(void) {
@@ -593,6 +628,8 @@ static void deinit(void) {
     destroy_simple_tree(secondTree);
   if(checklist)
     destroy_list(checklist);
+  if(checklistID)
+    free(checklistID);
 
   for(int i=0; i< NUMBER_IMAGES; ++i) {
     gbitmap_destroy(loadedBitmaps[i].bitmap);
@@ -600,7 +637,6 @@ static void deinit(void) {
 }
 
 int main(void) {
-  wasFirstMsg = false;
   init();
 
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Done initializing, pushed window: %p", windows[CWINDOW_LOADING].window);
