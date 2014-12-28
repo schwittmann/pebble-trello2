@@ -1,10 +1,10 @@
 {
   "uuid": "e4e18f82-c67b-4e37-805a-e0d8973a22eb",
-  "shortName": "pebble-trello2",
-  "longName": "pebble-trello2",
+  "shortName": "Trebble",
+  "longName": "Trebble: pebble-trello 2",
   "companyName": "MakeAwesomeHappen",
-  "versionCode": 1,
-  "versionLabel": "1.1",
+  "versionCode": 10002,
+  "versionLabel": "1.2",
   "watchapp": {
     "watchface": false
   },
@@ -15,7 +15,9 @@
     "boardidx":1000003,
     "listidx":1000004,
     "cardidx":1000005,
-    "checklistidx":1000006
+    "checklistidx":1000006,
+    "itemidx":     1000007,
+    "itemstate":   1000008
   },
   "resources": {
     "media": [
@@ -37,6 +39,7 @@
       {
         "type": "png",
         "name": "TRELLO_LOGO",
+        "menuIcon": true,
         "file": "images/trello-logo.png"
       }
     ]

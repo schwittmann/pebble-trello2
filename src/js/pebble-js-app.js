@@ -148,11 +148,17 @@ Pebble.addEventListener("appmessage",
         var checklist = globalData.cards[e.payload.cardidx].checklists[e.payload.checklistidx];
         sendChecklist(checklist);
         break;
+      case MESSAGE_TYPE_SELECTED_ITEM:
+        console.log("Got type MESSAGE_TYPE_SELECTED_ITEM");
+        var checklistitem = globalData.checklist[e.payload.itemidx];
+        console.log("toggled item "+checklistitem.name+" to "+e.payload.itemstate);
+        break;
     }
 	}
 );
 
 function sendChecklist(checklist) {
+  globalData.checklist = checklist;
   console.log("Sending checklist "+JSON.stringify(checklist));
   var msg = {};
   msg.type = MESSAGE_TYPE_CHECKLIST;

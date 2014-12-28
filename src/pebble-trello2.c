@@ -11,13 +11,21 @@ char* strdup(const char* in) {
 //// LIST
 
 
+enum ElementState{
+  STATE_UNCHECKED  = 0,
+  // The state has been toggled to unchecked
+  STATE_PENDING_UC = 1,
 
-typedef unsigned char ElementState;
+  STATE_CHECKED    = 2,
+  // The state has been toggled to checked
+  STATE_PENDING_C  = 3,
+};
 
-const ElementState STATE_UNCHECKED = 0;
-const ElementState STATE_CHECKED   = 1;
-const ElementState STATE_PENDING   = 2;
+bool isCheckedState(ElementState s) {
+  return s == STATE_CHECKED || s == STATE_PENDING_C;
+}
 
+typedef enum ElementState ElementState;
 
 typedef struct
 {
@@ -131,17 +139,39 @@ static CustomWindow windows[CWINDOW_SIZE];
 
 #define NUMBER_IMAGES  4
 
-static uint32_t TRELLO_ICONS[NUMBER_IMAGES] = {
-  RESOURCE_ID_TRELLO_BOX,
-  RESOURCE_ID_TRELLO_CHECKED,
-  RESOURCE_ID_TRELLO_PENDING,
-  RESOURCE_ID_TRELLO_LOGO
+typedef struct {
+  uint32_t id;
+  GBitmap* bitmap;
+} LoadedBitmap;
+
+
+LoadedBitmap loadedBitmaps[NUMBER_IMAGES] = {
+  {RESOURCE_ID_TRELLO_BOX, NULL},
+  {RESOURCE_ID_TRELLO_CHECKED, NULL},
+  {RESOURCE_ID_TRELLO_PENDING, NULL},
+  {RESOURCE_ID_TRELLO_LOGO, NULL}
+};
+
+enum {
+  RES_IDX_TRELLO_BOX,
+  RES_IDX_TRELLO_CHECKED,
+  RES_IDX_TRELLO_PENDING,
+  RES_IDX_TRELLO_LOGO
 };
 
 
-static GBitmap* loadedBitmaps[NUMBER_IMAGES];
-
-
+GBitmap* stateToIcon(ElementState s) {
+  switch(s) {
+    case STATE_PENDING_C:
+    case STATE_PENDING_UC:
+      return loadedBitmaps[RES_IDX_TRELLO_PENDING].bitmap;
+    case STATE_CHECKED:
+     return loadedBitmaps[RES_IDX_TRELLO_CHECKED].bitmap;
+    case STATE_UNCHECKED:
+     return loadedBitmaps[RES_IDX_TRELLO_BOX].bitmap;
+  }
+  return NULL;
+}
 
 static TextLayer *loading_text_layer;
 static bool wasFirstMsg;
@@ -297,7 +327,7 @@ void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callba
     boardMenuItems[i].title = strdup(element);
     boardMenuItems[i].callback = callback;
     if(window->content->elementState)
-      boardMenuItems[i].icon = loadedBitmaps[window->content->elementState[i]];
+      boardMenuItems[i].icon = stateToIcon(window->content->elementState[i]);
   }
   window->simplemenu = simple_menu_layer_create(layer_get_frame(window_get_root_layer(window->window)), window->window, boardSection, 1, boardMenuItems);
   Layer *window_layer = window_get_root_layer(window->window);
@@ -314,6 +344,7 @@ static void very_short_vibe() {
 }
 
 static void menu_list_select_callback(int index, void *ctx) {
+  very_short_vibe();
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Menu list: selected index %i", index);
   window_set_user_data(windows[CWINDOW_LOADING].window, "Loading Cards...");
   window_stack_push(windows[CWINDOW_LOADING].window, true);
@@ -388,14 +419,16 @@ static void menu_checklists_select_callback(int index, void *ctx) {
 
 
 ElementState toggleState(ElementState oldState) {
-  if (oldState == STATE_CHECKED)
-    return STATE_UNCHECKED;
-  return STATE_CHECKED;
+  if (oldState == STATE_CHECKED || oldState == STATE_PENDING_C)
+    return STATE_PENDING_UC;
+  if (oldState == STATE_UNCHECKED || oldState == STATE_PENDING_UC )
+    return STATE_PENDING_C;
+  return STATE_UNCHECKED;
 }
 
 static void menu_checklist_item_select_callback(int index, void* ctx) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Checklist: selected item %i", index);
-
+  very_short_vibe();
   DictionaryIterator *iter;
   app_message_outbox_begin(&iter);
   if (iter == NULL) {
@@ -408,7 +441,7 @@ static void menu_checklist_item_select_callback(int index, void* ctx) {
   checklist->elementState[index] = toggleState(checklist->elementState[index]);
 
   SimpleMenuItem *items = ctx;
-  items[index].icon = loadedBitmaps[STATE_PENDING];
+  items[index].icon = stateToIcon(checklist->elementState[index]);
   layer_mark_dirty(simple_menu_layer_get_layer(windows[CWINDOW_CHECKLIST].simplemenu));
 
 
@@ -417,6 +450,9 @@ static void menu_checklist_item_select_callback(int index, void* ctx) {
 
   Tuplet tuple2 = TupletInteger(MESSAGE_ITEMIDX_KEY, index);
   dict_write_tuplet(iter, &tuple2);
+
+  Tuplet tuple3 = TupletInteger(MESSAGE_ITEMSTATE_KEY, isCheckedState(checklist->elementState[index]));
+  dict_write_tuplet(iter, &tuple3);
 
   dict_write_end(iter);
 
@@ -542,7 +578,7 @@ static void init(void) {
   window_stack_push(windows[CWINDOW_LOADING].window, animated);
 
   for(int i=0; i< NUMBER_IMAGES; ++i) {
-    loadedBitmaps[i] = gbitmap_create_with_resource(TRELLO_ICONS[i]);
+    loadedBitmaps[i].bitmap = gbitmap_create_with_resource(loadedBitmaps[i].id);
   }
 }
 
@@ -559,7 +595,7 @@ static void deinit(void) {
     destroy_list(checklist);
 
   for(int i=0; i< NUMBER_IMAGES; ++i) {
-    gbitmap_destroy(loadedBitmaps[i]);
+    gbitmap_destroy(loadedBitmaps[i].bitmap);
   }
 }
 
