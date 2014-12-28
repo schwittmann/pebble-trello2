@@ -10,10 +10,19 @@ char* strdup(const char* in) {
 
 //// LIST
 
+
+
+typedef unsigned char ElementState;
+
+const ElementState STATE_UNCHECKED = 0;
+const ElementState STATE_CHECKED   = 1;
+const ElementState STATE_PENDING   = 2;
+
+
 typedef struct
 {
   char** elements;
-  bool*  elementState;
+  ElementState* elementState;
   int elementCount;
 } List;
 
@@ -290,7 +299,7 @@ void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callba
     if(window->content->elementState)
       boardMenuItems[i].icon = loadedBitmaps[window->content->elementState[i]];
   }
-  window->simplemenu = simple_menu_layer_create(layer_get_frame(window_get_root_layer(window->window)), window->window, boardSection, 1, NULL);
+  window->simplemenu = simple_menu_layer_create(layer_get_frame(window_get_root_layer(window->window)), window->window, boardSection, 1, boardMenuItems);
   Layer *window_layer = window_get_root_layer(window->window);
   layer_add_child(window_layer, simple_menu_layer_get_layer(window->simplemenu));
 }
@@ -378,8 +387,40 @@ static void menu_checklists_select_callback(int index, void *ctx) {
 }
 
 
+ElementState toggleState(ElementState oldState) {
+  if (oldState == STATE_CHECKED)
+    return STATE_UNCHECKED;
+  return STATE_CHECKED;
+}
+
 static void menu_checklist_item_select_callback(int index, void* ctx) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Checklist: selected item %i", index);
+
+  DictionaryIterator *iter;
+  app_message_outbox_begin(&iter);
+  if (iter == NULL) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at sending");
+    return;
+  }
+
+  // set to waiting state
+
+  checklist->elementState[index] = toggleState(checklist->elementState[index]);
+
+  SimpleMenuItem *items = ctx;
+  items[index].icon = loadedBitmaps[STATE_PENDING];
+  layer_mark_dirty(simple_menu_layer_get_layer(windows[CWINDOW_CHECKLIST].simplemenu));
+
+
+  Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_SELECTED_ITEM);
+  dict_write_tuplet(iter, &tuple);
+
+  Tuplet tuple2 = TupletInteger(MESSAGE_ITEMIDX_KEY, index);
+  dict_write_tuplet(iter, &tuple2);
+
+  dict_write_end(iter);
+
+  app_message_outbox_send();
 }
 
 static void menu_cards_select_callback(int index, void *ctx) {

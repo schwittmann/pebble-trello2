@@ -5,6 +5,9 @@ var MESSAGE_TYPE_SELECTED_LIST = 2;
 var MESSAGE_TYPE_CARDS = 3;
 var MESSAGE_TYPE_SELECTED_CHECKLIST = 4;
 var MESSAGE_TYPE_CHECKLIST = 5;
+var MESSAGE_TYPE_SELECTED_ITEM = 6;
+
+
 
 var loadedInit = false;
 var globalData = {};
