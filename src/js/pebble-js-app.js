@@ -152,7 +152,7 @@ Pebble.addEventListener("appmessage",
         break;
       case MESSAGE_TYPE_SELECTED_ITEM:
         console.log("Got type MESSAGE_TYPE_SELECTED_ITEM");
-        var item = globalData.activeChecklist[e.payload.itemidx];
+        var item = globalData.activeChecklist.checkItems[e.payload.itemidx];
         console.log("toggled item "+item.name+" to "+e.payload.itemstate);
 
         var newState = e.payload.itemstate?"complete":"incomplete";
@@ -170,9 +170,9 @@ Pebble.addEventListener("appmessage",
           msg.itemstate = state;
           Pebble.sendAppMessage(msg);
         }
-        makeRequest("cards/"+globalData.activeCard.id+"/checklist/"+globalData.activeChecklist.id+"/checkItem/"+item.id+"/state?value="+newState, sendResult, function() {
-            sendResult(true);
-            loadingFailed();
+        makeRequest("cards/"+globalData.activeCard.id+"/checklist/"+checklistid+"/checkItem/"+item.id+"/state?value="+newState, sendResult, function(f1, f2) {
+            sendResult(!DEBUG);
+            loadingFailed(f1, f2);
           }, "PUT");
         break;
     }
