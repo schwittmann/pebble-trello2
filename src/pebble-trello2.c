@@ -188,6 +188,7 @@ GBitmap* stateToIcon(ElementState s) {
 }
 
 static TextLayer *loading_text_layer;
+static BitmapLayer *loading_bitmaps_layer;
 
 static void loading_window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
@@ -198,11 +199,17 @@ static void loading_window_load(Window *window) {
 TODO: show logo
   */
 
-  loading_text_layer = text_layer_create((GRect) { .origin = { 0, 0}, .size = { bounds.size.w, 60 } });
+  loading_text_layer = text_layer_create((GRect) { .origin = { 0, 28}, .size = { 144, 168-28 } });
   text_layer_set_text(loading_text_layer, (const char*)window_get_user_data(window));
   text_layer_set_overflow_mode(loading_text_layer, GTextOverflowModeWordWrap);
   text_layer_set_text_alignment(loading_text_layer, GTextAlignmentCenter);
+
+  loading_bitmaps_layer = bitmap_layer_create((GRect) { .origin = { 58, 0}, .size = { 28, 28 } });
+  bitmap_layer_set_bitmap(loading_bitmaps_layer, loadedBitmaps[RES_IDX_TRELLO_LOGO].bitmap);
+
+  layer_add_child(window_layer, bitmap_layer_get_layer(loading_bitmaps_layer));
   layer_add_child(window_layer, text_layer_get_layer(loading_text_layer));
+
 }
 
 int32_t tuple_get_int(Tuple *t) {
@@ -599,6 +606,9 @@ static void loading_window_unload(Window *window) {
 }
 
 static void init(void) {
+  for(int i=0; i< NUMBER_IMAGES; ++i) {
+    loadedBitmaps[i].bitmap = gbitmap_create_with_resource(loadedBitmaps[i].id);
+  }
   app_message_init();
 
   firstTree = make_simple_tree();
@@ -613,10 +623,6 @@ static void init(void) {
   });
   const bool animated = true;
   window_stack_push(windows[CWINDOW_LOADING].window, animated);
-
-  for(int i=0; i< NUMBER_IMAGES; ++i) {
-    loadedBitmaps[i].bitmap = gbitmap_create_with_resource(loadedBitmaps[i].id);
-  }
 }
 
 static void deinit(void) {
