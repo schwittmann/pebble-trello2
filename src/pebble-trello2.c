@@ -445,7 +445,8 @@ ElementState toggleState(ElementState oldState) {
 
 static void menu_checklist_item_select_callback(int index, void* ctx) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Checklist: selected item %i", index);
-
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "heap_bytes_used: %u, heap_bytes_free: %u", heap_bytes_used(), heap_bytes_free());
+  
   if(isPendingState(checklist->elementState[index])) {
     vibes_double_pulse();
     return;
@@ -563,8 +564,9 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
 
       int itemidx = tuple_get_int(dict_find(iter, MESSAGE_ITEMIDX_KEY));
       int state = tuple_get_int(dict_find(iter, MESSAGE_ITEMSTATE_KEY));
-
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Raw state %u", state);
       checklist->elementState[itemidx] = intStateToState(state);
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Set element state to %u", checklist->elementState[itemidx]);
 
       windows[CWINDOW_CHECKLIST].simpleMenuItem[itemidx].icon = stateToIcon(checklist->elementState[itemidx]);
       layer_mark_dirty(simple_menu_layer_get_layer(windows[CWINDOW_CHECKLIST].simplemenu));

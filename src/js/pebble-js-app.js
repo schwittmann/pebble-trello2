@@ -13,7 +13,7 @@ var loadedInit = false;
 var globalData = {};
 
 
-var DEBUG = true;
+var DEBUG = false;
 
 var DEBUG_DATA = {
   'lists/544170754ca9faba842252bf/cards?fields=id,name,checklists&checklists=all': [{"id":"544170b7867dffe084b8ce56","name":"Duisburg","checklists":[{"id":"544170bce372301185330784","name":"Checklist","idBoard":"544170754ca9faba842252be","idCard":"544170b7867dffe084b8ce56","pos":16384,"checkItems":[{"id":"544394af4a241bafe46260e6","name":"Wasserhaehne","nameData":null,"pos":114688,"state":"incomplete"},{"id":"544bf4b10658e8a0ff1cd4f1","name":"Personenwage","nameData":null,"pos":114576,"state":"incomplete"},{"id":"5451550605e92341cf339ab3","name":"Weisswaschmittel","nameData":null,"pos":114240,"state":"incomplete"},{"id":"5457fa6adc7744f3fb08b071","name":"Kinderpflaster","nameData":{"emoji":{}},"pos":57120,"state":"complete"},{"id":"5459e31ac22d1b6ac5111a8f","name":"Brotaufstrich","nameData":null,"pos":85680,"state":"complete"},{"id":"5459e32535d5117bb4db642c","name":"Kaffee Pads","nameData":null,"pos":147456,"state":"complete"},{"id":"545a75cda018f677641a249e","name":"Muell, swirl 35l","nameData":null,"pos":163840,"state":"incomplete"}]}]},{"id":"544170c8253f4ec05eddd2a8","name":"Wohnung Koeln","checklists":[{"id":"544decbe9bdc693f924af049","name":"Checklist","idBoard":"544170754ca9faba842252be","idCard":"544170c8253f4ec05eddd2a8","pos":16384,"checkItems":[{"id":"544decc35dbcd398d4a3bb1f","name":"Duschgel","nameData":null,"pos":16384,"state":"incomplete"},{"id":"544decc797ee2c2292a13018","name":"Zahnpasta","nameData":null,"pos":32768,"state":"incomplete"}]}]},{"id":"5442a51f51648779c7ef9a3e","name":"Einkauf Chris event","checklists":[{"id":"5442a525bea253e8e4b27d40","name":"Checklist","idBoard":"544170754ca9faba842252be","idCard":"5442a51f51648779c7ef9a3e","pos":16384,"checkItems":[{"id":"5442a5348660bc59a9d3bb5d","name":"2x Blanchet trocken","nameData":null,"pos":16384,"state":"incomplete"},{"id":"5442a5444b3ff9c4b577ef5d","name":"2x blanchet halbtrocken","nameData":null,"pos":32768,"state":"incomplete"},{"id":"5442a54c3d0e94649884dff4","name":"3X Zucchini","nameData":{"emoji":{}},"pos":49152,"state":"incomplete"},{"id":"5442a58cbe06e7e2bfbacbdb","name":"8 Tomaten","nameData":null,"pos":65536,"state":"incomplete"},{"id":"5442a5c91953d5c0c71f0adc","name":"2 Schafskaese","nameData":null,"pos":81920,"state":"incomplete"},{"id":"5442a5f139f0cc2af4e3a5a0","name":"700g fussili","nameData":null,"pos":98304,"state":"incomplete"},{"id":"5442a62ba873c76fc77f1fca","name":"1 Sahneersatz","nameData":null,"pos":114688,"state":"incomplete"},{"id":"5442a650f388871d85c84a53","name":"Safari","nameData":{"emoji":{}},"pos":131072,"state":"incomplete"},{"id":"5442a66468ba902c2900acef","name":"Wodka","nameData":null,"pos":147456,"state":"incomplete"},{"id":"5442a66ffbeb3a7bb54bd424","name":"Orangensaft","nameData":null,"pos":163840,"state":"incomplete"},{"id":"5442a671942d902885be8cd5","name":"Energie","nameData":null,"pos":180224,"state":"incomplete"}]}]}]
@@ -157,20 +157,24 @@ Pebble.addEventListener("appmessage",
 
         var newState = e.payload.itemstate?"complete":"incomplete";
         var checklistid = globalData.activeChecklist.id;
-/*        TODO: get watch indices, send in update, prevent updateing wrong checklist
-        Other Idea: checklist with id!*/
         function sendResult(hasFailed) {
           var msg = {};
           msg.type = MESSAGE_TYPE_ITEM_STATE_CHANGED;
           msg.checklistid = checklistid;
           msg.itemidx = e.payload.itemidx;
           var state = e.payload.itemstate;
-          if(hasFailed)
+          if(hasFailed) {
+            console.log("Update has failed. Setting to old state.")
             state = (state+1)%2;
+          }
+          //update our cache
+          item.state = state?"complete":"incomplete";
           msg.itemstate = state;
           Pebble.sendAppMessage(msg);
         }
-        makeRequest("cards/"+globalData.activeCard.id+"/checklist/"+checklistid+"/checkItem/"+item.id+"/state?value="+newState, sendResult, function(f1, f2) {
+        makeRequest("cards/"+globalData.activeCard.id+"/checklist/"+checklistid+"/checkItem/"+item.id+"/state?value="+newState, function() {
+          sendResult(false);
+          }, function(f1, f2) {
             sendResult(!DEBUG);
             loadingFailed(f1, f2);
           }, "PUT");
