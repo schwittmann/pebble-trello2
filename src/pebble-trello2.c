@@ -8,6 +8,17 @@ char* strdup(const char* in) {
   return t;
 }
 
+char* strndup(const char *s, size_t n) {
+  size_t len = strlen(s);
+  if (len <= n)
+    return strdup(s);
+  char* o = malloc(n+1);
+  strncpy(o, s, n);
+  o[n] = 0;
+  return o;
+}
+
+
 //// LIST
 
 
@@ -42,24 +53,38 @@ bool isPendingState(ElementState s) {
 typedef struct
 {
   char** elements;
+  char** subtitles;
   ElementState* elementState;
   int elementCount;
 } List;
 
 
 List* make_list(int elementCount) {
-  List* l = malloc(sizeof(List) + sizeof(char*)*elementCount);
+  List* l = malloc(sizeof(List) + 2*sizeof(char*)*elementCount);
   l->elementCount = elementCount;
   l->elements = sizeof(List)+ (void*)l;
+  l->subtitles = elementCount * sizeof(char*)+ (void*)l->elements;
+  memset(l->subtitles, 0, sizeof(char*)*elementCount);
   l->elementState = NULL;
   return l;
+}
+
+void list_load_item(List* list, int index, const char* str) {
+  if(strlen(str) > 13) {
+    list->elements[index] = strndup(str, 11);
+    list->subtitles[index] = strdup(str+11);
+  } else {
+    list->elements[index] = strdup(str);
+  }
 }
 
 static void empty_list(List* l) {
   if(l->elements == NULL)
     return;
-  for(int i=0; i<l->elementCount; ++i)
+  for(int i=0; i<l->elementCount; ++i) {
     free(l->elements[i]);
+    free(l->subtitles[i]);
+  }
   if(l->elementState)
     free(l->elementState);
   l->elementState = NULL;
@@ -192,8 +217,8 @@ static BitmapLayer *loading_bitmaps_layer;
 
 static void loading_window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
-  GRect bounds = layer_get_bounds(window_layer);
-/*
+/*  GRect bounds = layer_get_bounds(window_layer);
+
   BitmapLayer* layer = bitmap_layer_create((GRect) { .origin = { 0, 0 }, .size = { bounds.size.w, 20 } });
   bitmap_layer_set_bitmap(layer, logo);
 TODO: show logo
@@ -265,7 +290,7 @@ void deserialize_checklist(DictionaryIterator *iter, List** listRef) {
 
   List* list = *listRef;
   for(int i=0; i<numberElements; ++i) {
-    list->elements[i] = strdup(tuple_get_str(dict_find(iter, 2*i)));
+    list_load_item(list, i, tuple_get_str(dict_find(iter, 2*i)));
     list->elementState[i] = intStateToState(tuple_get_int(dict_find(iter, 2*i+1)));
   }
   if(checklistID)
@@ -289,15 +314,15 @@ void deserialize_simple_tree(DictionaryIterator *iter, SimpleTree* tree) {
   tree->sublists = malloc(sizeof(List*)*numberElements);
   int msgPtr = 0;
   for(int i=0; i<tree->list->elementCount; ++i) {
-    tree->list->elements[i] = strdup(tuple_get_str(dict_find(iter, msgPtr++)));
+    list_load_item(tree->list, i, tuple_get_str(dict_find(iter, msgPtr++)));
     int sublistSize = tuple_get_int(dict_find(iter, msgPtr++));
     tree->sublists[i] = make_list(sublistSize);
     for(int j=0; j<sublistSize; j++){
-      tree->sublists[i]->elements[j] = strdup(tuple_get_str(dict_find(iter, msgPtr++)));
+      list_load_item(tree->sublists[i], j, tuple_get_str(dict_find(iter, msgPtr++)));
     }
   }
 
-  debug_print_tree(tree);
+  //debug_print_tree(tree);
 }
 
 
@@ -347,8 +372,10 @@ void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callba
 
   for(int i =0; i< numberElements ;++i ) {
     const char* element = window->content->elements[i];
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "Element %i: %s", i, element);
-    boardMenuItems[i].title = strdup(element);
+    //APP_LOG(APP_LOG_LEVEL_DEBUG, "Element %i: %s", i, element);
+    // No need to dup here. window->content will be destroyed AFTER boardmenuitems
+    boardMenuItems[i].title = element;
+    boardMenuItems[i].subtitle = window->content->subtitles[i];
     boardMenuItems[i].callback = callback;
     if(window->content->elementState)
       boardMenuItems[i].icon = stateToIcon(window->content->elementState[i]);
@@ -497,11 +524,11 @@ static void menu_cards_select_callback(int index, void *ctx) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Cards: selected index %i", index);
   windows[CWINDOW_CHECKLISTS].content = secondTree->sublists[index];
   createListWindow(&windows[CWINDOW_CHECKLISTS], menu_checklists_select_callback, secondTree->list->elements[index]);
+  window_stack_push(windows[CWINDOW_CHECKLISTS].window, true);
   if(secondTree->sublists[index]->elementCount == 1) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Only one checklist, selecting...");
+    window_stack_remove(windows[CWINDOW_CHECKLISTS].window, true);
     menu_checklists_select_callback(0, NULL);
-  } else {
-    window_stack_push(windows[CWINDOW_CHECKLISTS].window, true);
   }
 }
 
@@ -528,11 +555,11 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       windows[CWINDOW_BOARDS].content = firstTree->list;
       createListWindow(&windows[CWINDOW_BOARDS], menu_board_select_callback, "Boards");
       window_stack_remove(windows[CWINDOW_LOADING].window, false);
+      window_stack_push(windows[CWINDOW_BOARDS].window, true);
       if(firstTree->list->elementCount == 1) {
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Only one board, selecting...");
+        window_stack_remove(windows[CWINDOW_BOARDS].window, true);
         menu_board_select_callback(0, NULL);
-      } else {
-        window_stack_push(windows[CWINDOW_BOARDS].window, true);
       }
       break;
     case MESSAGE_TYPE_CARDS:
@@ -541,19 +568,23 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       windows[CWINDOW_CARDS].content = secondTree->list;
       createListWindow(&windows[CWINDOW_CARDS], menu_cards_select_callback, "Cards");
       window_stack_remove(windows[CWINDOW_LOADING].window, false);
+      window_stack_push(windows[CWINDOW_CARDS].window, true);
       if(secondTree->list->elementCount == 1) {
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Only one card, selecting...");
+        window_stack_remove(windows[CWINDOW_CARDS].window, true);
         menu_cards_select_callback(0, NULL);
-      } else {
-        window_stack_push(windows[CWINDOW_CARDS].window, true);
       }
       break;
     case MESSAGE_TYPE_CHECKLIST:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Got type checklist!");
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
       deserialize_checklist(iter, &checklist);
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used2: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
       windows[CWINDOW_CHECKLIST].content = checklist;
       createListWindow(&windows[CWINDOW_CHECKLIST], menu_checklist_item_select_callback, "Checklist");
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used3: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
       window_stack_push(windows[CWINDOW_CHECKLIST].window, true);
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used4: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
       window_stack_remove(windows[CWINDOW_LOADING].window, false);
       break;
     case MESSAGE_TYPE_INIT:

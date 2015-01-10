@@ -24,6 +24,7 @@ var DEBUG_DATA = {
 
 function makeRequest(urlpath, success, fail, verb) {
   function decodeUtf8(utftext) {
+    return utftext;
     var minimalMappingUtf8ToIso8859 = {
       228:'ae',
       196:'Ae',
