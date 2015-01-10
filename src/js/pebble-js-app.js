@@ -7,7 +7,7 @@ var MESSAGE_TYPE_SELECTED_CHECKLIST = 4;
 var MESSAGE_TYPE_CHECKLIST = 5;
 var MESSAGE_TYPE_SELECTED_ITEM = 6;
 var MESSAGE_TYPE_ITEM_STATE_CHANGED = 7;
-
+var MESSAGE_TYPE_HTTP_FAIL          = 8
 
 var loadedInit = false;
 var globalData = {};
@@ -175,10 +175,7 @@ Pebble.addEventListener("appmessage",
         }
         makeRequest("cards/"+globalData.activeCard.id+"/checklist/"+checklistid+"/checkItem/"+item.id+"/state?value="+newState, function() {
           sendResult(false);
-          }, function(f1, f2) {
-            sendResult(!DEBUG);
-            loadingFailed(f1, f2);
-          }, "PUT");
+          }, loadingFailed, "PUT");
         break;
     }
 	}
@@ -268,5 +265,9 @@ function loadedUser(user) {
 
 function loadingFailed(txt, code) {
   console.log("Loading failed "+code+": "+txt);
-  console.log("TODO: handle this! Send message to watch!");
+  var msg = {};
+  msg.type = MESSAGE_TYPE_HTTP_FAIL;
+  msg.failText = "Network failed ("+code+"):\n"+txt;
+  
+  Pebble.sendAppMessage(msg);
 }

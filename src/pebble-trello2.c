@@ -610,6 +610,13 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       layer_mark_dirty(simple_menu_layer_get_layer(windows[CWINDOW_CHECKLIST].simplemenu));
       break;
     }
+    case MESSAGE_TYPE_HTTP_FAIL: {
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Got type http fail!");
+      char* text = tuple_get_str(dict_find(iter, MESSAGE_FAILTEXT_DICT_KEY));
+      window_set_user_data(windows[CWINDOW_LOADING].window, strdup(text));
+      window_stack_pop_all(false);
+      window_stack_push(windows[CWINDOW_LOADING].window, false);
+    }
   }
 }
 

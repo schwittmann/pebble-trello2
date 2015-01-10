@@ -9,16 +9,17 @@
     "watchface": false
   },
   "appKeys": {
-    "type": 1000000,
-    "value": 1000001,
+    "type":        1000000,
+    "value":       1000001,
     "numElements": 1000002,
-    "boardidx":1000003,
-    "listidx":1000004,
-    "cardidx":1000005,
+    "boardidx":    1000003,
+    "listidx":     1000004,
+    "cardidx":     1000005,
     "checklistidx":1000006,
     "itemidx":     1000007,
     "itemstate":   1000008,
-    "checklistid": 1000009
+    "checklistid": 1000009,
+    "failText":    1000010
   },
   "resources": {
     "media": [
