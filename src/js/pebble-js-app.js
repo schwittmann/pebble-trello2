@@ -118,13 +118,14 @@ Pebble.addEventListener("webviewclosed", function (e) {
     // no configuration needed?
     if (localStorage.getItem("token") && !loadedInit) {
       console.log("token available, okay...");
-      loadBoards();
+      //loadBoards();
     }
     return;
   }
   
   if(localStorage.getItem("token") == configuration.token) {
     console.log("Got already known token");
+    return;
   }
   localStorage.setItem("token", configuration.token);
   console.log("Set token: "+configuration.token);

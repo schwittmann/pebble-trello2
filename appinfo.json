@@ -1,10 +1,10 @@
 {
-  "uuid": "e4e18f82-c67b-4e37-805a-e0d8973a22eb",
+  "uuid": "32bf21ee-b05e-4a80-97b7-21d2e2419a71",
   "shortName": "Trebble",
   "longName": "Trebble: pebble-trello 2",
-  "companyName": "MakeAwesomeHappen",
-  "versionCode": 10002,
-  "versionLabel": "1.2",
+  "companyName": "Schwittmann",
+  "versionCode": 1,
+  "versionLabel": "2.0",
   "watchapp": {
     "watchface": false
   },
