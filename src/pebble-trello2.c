@@ -139,21 +139,22 @@ static List* checklist = NULL;
 
 static char* checklistID = NULL;
 
-
 //// CUSTOMWINDOW
+
+struct CustomMenuLayer;
+
+typedef struct CustomMenuLayer CustomMenuLayer;
 
 typedef struct {
   Window *window;
   List* content;
-  SimpleMenuLayer* simplemenu;
-  SimpleMenuItem* simpleMenuItem;
+  struct CustomMenuLayer* customMenu;
 } CustomWindow;
 
 void custom_window_create(CustomWindow* window) {
   window->window = window_create();
   window->content = NULL;
-  window->simplemenu = NULL;
-  window->simpleMenuItem = NULL;
+  window->customMenu = NULL;
 }
 
 void custom_window_destroy(CustomWindow* window) {
@@ -174,6 +175,86 @@ enum {
 
 
 static CustomWindow windows[CWINDOW_SIZE];
+
+
+
+#define CUSTOM_MENU_LIST_FONT fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD)
+
+struct CustomMenuLayer{
+  CustomWindow* cwindow;
+  MenuLayer* menuLayer;
+  const char* title;
+  MenuLayerCallbacks callbacks;
+};
+
+void custom_menu_layer_draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_index, void *callback_context) {
+  CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "draw text call!");
+  graphics_draw_text(ctx, this->cwindow->content->elements[cell_index->row], CUSTOM_MENU_LIST_FONT, layer_get_bounds(cell_layer),
+    GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "drawn text: %s", this->cwindow->content->elements[cell_index->row]);
+}
+
+uint16_t custom_menu_layer_num_rows(struct MenuLayer *menu_layer, uint16_t section_index, void *callback_context) {
+  CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "num_rows call: %u", (int)this->cwindow->content->elementCount);
+  return this->cwindow->content->elementCount;
+}
+
+uint16_t custom_menu_layer_num_sections(struct MenuLayer *menu_layer, void *callback_context) {
+  return 1;
+}
+
+int16_t custom_menu_layer_cell_height(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *callback_context) {
+    CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
+    GSize s = graphics_text_layout_get_content_size(this->cwindow->content->elements[cell_index->row],
+      CUSTOM_MENU_LIST_FONT,
+      (GRect){.origin = GPointZero, .size = (GSize){.w = 144, .h=255}},
+      GTextOverflowModeWordWrap,
+      GTextAlignmentLeft);
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "cell_h call(%i): %u", cell_index->row, s.h);
+    return s.h;
+}
+
+int16_t custom_menu_layer_header_height(struct MenuLayer *menu_layer, uint16_t section_index, void *callback_context) {
+  return 18;
+}
+
+void custom_menu_layer_draw_header(GContext *ctx, const Layer *cell_layer, uint16_t section_index, void *callback_context) {
+  CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
+  menu_cell_basic_header_draw(ctx, cell_layer,  this->title);
+
+}
+
+void custom_menu_layer_destroy(CustomMenuLayer* this) {
+  menu_layer_destroy(this->menuLayer);
+  free(this);
+}
+
+void custom_menu_layer_select(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *callback_context) {
+  CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "selected text: %s", this->cwindow->content->elements[cell_index->row]);
+}
+
+CustomMenuLayer* custom_menu_layer_create(CustomWindow* cwindow) {
+  CustomMenuLayer* this = malloc(sizeof(CustomMenuLayer));
+  memset(this, 0, sizeof(CustomMenuLayer));
+  this->cwindow = cwindow;
+  this->menuLayer = menu_layer_create((GRect) { .origin = GPointZero, .size = (GSize) {.w = 144, .h = 168} }/*layer_get_bounds(window_get_root_layer(this->cwindow->window))*/);
+  this->callbacks = (MenuLayerCallbacks){
+    .draw_header = custom_menu_layer_draw_header,
+    .draw_row = custom_menu_layer_draw_row,
+    .get_cell_height = custom_menu_layer_cell_height,
+    .get_header_height = custom_menu_layer_header_height,
+    .get_num_rows = custom_menu_layer_num_rows,
+    .get_num_sections = custom_menu_layer_num_sections,
+    .select_click = custom_menu_layer_select
+  };
+  menu_layer_set_callbacks(this->menuLayer, this, this->callbacks);
+  menu_layer_set_click_config_onto_window(this->menuLayer, cwindow->window);
+  return this;
+}
+
 
 
 #define NUMBER_IMAGES  4
@@ -341,14 +422,9 @@ static void list_window_unload(Window *window) {
     return;
   }
 
-  layer_remove_from_parent(simple_menu_layer_get_layer(cwindow->simplemenu));
-  simple_menu_layer_destroy(cwindow->simplemenu);
-  cwindow->simplemenu = NULL;
-
-  if(cwindow->simpleMenuItem) {
-    free(cwindow->simpleMenuItem);
-    cwindow->simpleMenuItem = NULL;
-  }
+  layer_remove_from_parent(menu_layer_get_layer(cwindow->customMenu->menuLayer));
+  custom_menu_layer_destroy(cwindow->customMenu);
+  cwindow->customMenu = NULL;
 }
 
 void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callback, const char* title) {
@@ -358,31 +434,12 @@ void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callba
   });
 
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Creating list window with %i Elements", window->content->elementCount);
-  int numberElements = window->content->elementCount;
 
-  window->simpleMenuItem = malloc(sizeof(SimpleMenuSection) + sizeof(SimpleMenuItem)* numberElements);
-  SimpleMenuItem* boardMenuItems = window->simpleMenuItem;
-  memset(boardMenuItems, 0, sizeof(SimpleMenuItem)*numberElements);
+  window->customMenu = custom_menu_layer_create(window);
+  window->customMenu->title = title;
 
-
-  SimpleMenuSection* boardSection = ((void*)window->simpleMenuItem)+sizeof(SimpleMenuItem)* numberElements;
-  boardSection->items = boardMenuItems;
-  boardSection->num_items = numberElements;
-  boardSection->title = title;
-
-  for(int i =0; i< numberElements ;++i ) {
-    const char* element = window->content->elements[i];
-    //APP_LOG(APP_LOG_LEVEL_DEBUG, "Element %i: %s", i, element);
-    // No need to dup here. window->content will be destroyed AFTER boardmenuitems
-    boardMenuItems[i].title = element;
-    boardMenuItems[i].subtitle = window->content->subtitles[i];
-    boardMenuItems[i].callback = callback;
-    if(window->content->elementState)
-      boardMenuItems[i].icon = stateToIcon(window->content->elementState[i]);
-  }
-  window->simplemenu = simple_menu_layer_create(layer_get_frame(window_get_root_layer(window->window)), window->window, boardSection, 1, window);
   Layer *window_layer = window_get_root_layer(window->window);
-  layer_add_child(window_layer, simple_menu_layer_get_layer(window->simplemenu));
+  layer_add_child(window_layer, menu_layer_get_layer(window->customMenu->menuLayer));
 }
 
 static void very_short_vibe() {
@@ -498,11 +555,12 @@ static void menu_checklist_item_select_callback(int index, void* ctx) {
 
   checklist->elementState[index] = toggleState(checklist->elementState[index]);
 
+  /* TODO: HANDLE THIS
   CustomWindow *cwindow = ctx;
   SimpleMenuItem* items = cwindow->simpleMenuItem;
   items[index].icon = stateToIcon(checklist->elementState[index]);
   layer_mark_dirty(simple_menu_layer_get_layer(windows[CWINDOW_CHECKLIST].simplemenu));
-
+  */
 
   Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_SELECTED_ITEM);
   dict_write_tuplet(iter, &tuple);
@@ -606,8 +664,10 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       checklist->elementState[itemidx] = intStateToState(state);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Set element state to %u", checklist->elementState[itemidx]);
 
+      /* TODO: HANDLE!
       windows[CWINDOW_CHECKLIST].simpleMenuItem[itemidx].icon = stateToIcon(checklist->elementState[itemidx]);
       layer_mark_dirty(simple_menu_layer_get_layer(windows[CWINDOW_CHECKLIST].simplemenu));
+      */
       break;
     }
     case MESSAGE_TYPE_HTTP_FAIL: {
