@@ -643,7 +643,7 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       deserialize_checklist(iter, &checklist);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used2: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
       windows[CWINDOW_CHECKLIST].content = checklist;
-      createListWindow(&windows[CWINDOW_CHECKLIST], menu_checklist_item_select_callback, "Checklist");
+      createListWindow(&windows[CWINDOW_CHECKLIST], menu_checklist_item_select_callback, windows[CWINDOW_CHECKLISTS].content->elements[selected_checklist_index]);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used3: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
       window_stack_push(windows[CWINDOW_CHECKLIST].window, true);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used4: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
