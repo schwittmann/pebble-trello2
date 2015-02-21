@@ -34,6 +34,7 @@ enum ElementState{
 
 typedef enum ElementState ElementState;
 
+GBitmap* stateToIcon(ElementState s);
 
 ElementState intStateToState(int state) {
   if(state)
@@ -176,6 +177,7 @@ struct CustomMenuLayer{
   MenuLayer* menuLayer;
   const char* title;
   MenuLayerCallbacks callbacks;
+  SimpleMenuLayerSelectCallback callback;
 };
 
 void custom_menu_layer_draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_index, void *callback_context) {
@@ -184,6 +186,11 @@ void custom_menu_layer_draw_row(GContext *ctx, const Layer *cell_layer, MenuInde
   GRect s = (GRect){.origin =  (GPoint){.x  = 5, .y = 0}, .size = (GSize){.w = 144, .h=255}};
   graphics_draw_text(ctx, this->cwindow->content->elements[cell_index->row], CUSTOM_MENU_LIST_FONT, s,
     GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
+  if(this->cwindow->content->elementState) {
+    GBitmap *icon = stateToIcon(this->cwindow->content->elementState[cell_index->row]);
+    graphics_context_set_compositing_mode(ctx, GCompOpAssign);
+    graphics_draw_bitmap_in_rect(ctx, icon, (GRect){.origin = (GPoint){.x = 5, .y = 5}, .size = icon->bounds.size});
+  }
 }
 
 uint16_t custom_menu_layer_num_rows(struct MenuLayer *menu_layer, uint16_t section_index, void *callback_context) {
@@ -193,6 +200,10 @@ uint16_t custom_menu_layer_num_rows(struct MenuLayer *menu_layer, uint16_t secti
 
 uint16_t custom_menu_layer_num_sections(struct MenuLayer *menu_layer, void *callback_context) {
   return 1;
+}
+
+void custom_menu_set_select_callback(CustomMenuLayer* this, SimpleMenuLayerSelectCallback callback) {
+  this->callback = callback;
 }
 
 int16_t custom_menu_layer_cell_height(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *callback_context) {
@@ -221,7 +232,8 @@ void custom_menu_layer_destroy(CustomMenuLayer* this) {
 
 void custom_menu_layer_select(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *callback_context) {
   CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "selected text: %s", this->cwindow->content->elements[cell_index->row]);
+  if(this->callback)
+    this->callback(cell_index->row, this);
 }
 
 CustomMenuLayer* custom_menu_layer_create(CustomWindow* cwindow) {
@@ -286,12 +298,6 @@ static BitmapLayer *loading_bitmaps_layer;
 
 static void loading_window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
-/*  GRect bounds = layer_get_bounds(window_layer);
-
-  BitmapLayer* layer = bitmap_layer_create((GRect) { .origin = { 0, 0 }, .size = { bounds.size.w, 20 } });
-  bitmap_layer_set_bitmap(layer, logo);
-TODO: show logo
-  */
 
   loading_text_layer = text_layer_create((GRect) { .origin = { 0, 28}, .size = { 144, 168-28 } });
   text_layer_set_text(loading_text_layer, (const char*)window_get_user_data(window));
@@ -425,6 +431,7 @@ void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callba
 
   window->customMenu = custom_menu_layer_create(window);
   window->customMenu->title = title;
+  custom_menu_set_select_callback(window->customMenu, callback);
 
   Layer *window_layer = window_get_root_layer(window->window);
   layer_add_child(window_layer, menu_layer_get_layer(window->customMenu->menuLayer));
@@ -543,12 +550,8 @@ static void menu_checklist_item_select_callback(int index, void* ctx) {
 
   checklist->elementState[index] = toggleState(checklist->elementState[index]);
 
-  /* TODO: HANDLE THIS
-  CustomWindow *cwindow = ctx;
-  SimpleMenuItem* items = cwindow->simpleMenuItem;
-  items[index].icon = stateToIcon(checklist->elementState[index]);
-  layer_mark_dirty(simple_menu_layer_get_layer(windows[CWINDOW_CHECKLIST].simplemenu));
-  */
+  CustomMenuLayer *cmenu = ctx;
+  menu_layer_reload_data(cmenu->menuLayer);
 
   Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_SELECTED_ITEM);
   dict_write_tuplet(iter, &tuple);
@@ -652,10 +655,7 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       checklist->elementState[itemidx] = intStateToState(state);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Set element state to %u", checklist->elementState[itemidx]);
 
-      /* TODO: HANDLE!
-      windows[CWINDOW_CHECKLIST].simpleMenuItem[itemidx].icon = stateToIcon(checklist->elementState[itemidx]);
-      layer_mark_dirty(simple_menu_layer_get_layer(windows[CWINDOW_CHECKLIST].simplemenu));
-      */
+      menu_layer_reload_data(windows[CWINDOW_CHECKLIST].customMenu->menuLayer);
       break;
     }
     case MESSAGE_TYPE_HTTP_FAIL: {
