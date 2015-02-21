@@ -226,6 +226,9 @@ function loadedCards(cards) {
   for(var i=0; i< cards.length; ++i) {
     var card = cards[i];
     card.checklists.sort(posSorting);
+    for (var j=0; j< card.checklists.length; ++j) {
+      card.checklists[j].checkItems.sort(posSorting);
+    }
   }
 
   var data = {};
