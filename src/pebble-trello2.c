@@ -180,16 +180,27 @@ struct CustomMenuLayer{
   SimpleMenuLayerSelectCallback callback;
 };
 
+GRect custom_menu_layer_get_text_rect(ElementState* s) {
+  GRect ret = (GRect){.origin =  (GPoint){.x  = 5, .y = 0}, .size = (GSize){.w = 144-5, .h= 255}};
+  if(s) {
+    ret.origin.x += 12;
+    ret.size.w -= 12;
+  }
+
+  return ret;
+}
+
 void custom_menu_layer_draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_index, void *callback_context) {
   CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
+  List * content = this->cwindow->content;
   graphics_context_set_text_color(ctx, GColorBlack);
-  GRect s = (GRect){.origin =  (GPoint){.x  = 5, .y = 0}, .size = (GSize){.w = 144, .h=255}};
-  graphics_draw_text(ctx, this->cwindow->content->elements[cell_index->row], CUSTOM_MENU_LIST_FONT, s,
+  GRect s = custom_menu_layer_get_text_rect(content->elementState? content->elementState+cell_index->row : NULL);
+  graphics_draw_text(ctx, content->elements[cell_index->row], CUSTOM_MENU_LIST_FONT, s,
     GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
-  if(this->cwindow->content->elementState) {
-    GBitmap *icon = stateToIcon(this->cwindow->content->elementState[cell_index->row]);
+  if(content->elementState) {
+    GBitmap *icon = stateToIcon(content->elementState[cell_index->row]);
     graphics_context_set_compositing_mode(ctx, GCompOpAssign);
-    graphics_draw_bitmap_in_rect(ctx, icon, (GRect){.origin = (GPoint){.x = 5, .y = 5}, .size = icon->bounds.size});
+    graphics_draw_bitmap_in_rect(ctx, icon, (GRect){.origin = (GPoint){.x = 1, .y = 10}, .size = icon->bounds.size});
   }
 }
 
@@ -208,9 +219,11 @@ void custom_menu_set_select_callback(CustomMenuLayer* this, SimpleMenuLayerSelec
 
 int16_t custom_menu_layer_cell_height(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *callback_context) {
     CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
+    List * content = this->cwindow->content;
+    GRect text_bounds = custom_menu_layer_get_text_rect(content->elementState? content->elementState+cell_index->row : NULL);
     GSize s = graphics_text_layout_get_content_size(this->cwindow->content->elements[cell_index->row],
       CUSTOM_MENU_LIST_FONT,
-      (GRect){.origin = (GPoint){.x  = 5, .y = 0}, .size = (GSize){.w = 144, .h=255}},
+      text_bounds,
       GTextOverflowModeTrailingEllipsis,
       GTextAlignmentLeft);
     return s.h + 5;
