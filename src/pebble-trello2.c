@@ -53,29 +53,21 @@ bool isPendingState(ElementState s) {
 typedef struct
 {
   char** elements;
-  char** subtitles;
   ElementState* elementState;
   int elementCount;
 } List;
 
 
 List* make_list(int elementCount) {
-  List* l = malloc(sizeof(List) + 2*sizeof(char*)*elementCount);
+  List* l = malloc(sizeof(List) + sizeof(char*)*elementCount);
   l->elementCount = elementCount;
   l->elements = sizeof(List)+ (void*)l;
-  l->subtitles = elementCount * sizeof(char*)+ (void*)l->elements;
-  memset(l->subtitles, 0, sizeof(char*)*elementCount);
   l->elementState = NULL;
   return l;
 }
 
 void list_load_item(List* list, int index, const char* str) {
-  if(strlen(str) > 13) {
-    list->elements[index] = strndup(str, 11);
-    list->subtitles[index] = strdup(str+11);
-  } else {
     list->elements[index] = strdup(str);
-  }
 }
 
 static void empty_list(List* l) {
@@ -83,7 +75,6 @@ static void empty_list(List* l) {
     return;
   for(int i=0; i<l->elementCount; ++i) {
     free(l->elements[i]);
-    free(l->subtitles[i]);
   }
   if(l->elementState)
     free(l->elementState);
@@ -178,7 +169,7 @@ static CustomWindow windows[CWINDOW_SIZE];
 
 
 
-#define CUSTOM_MENU_LIST_FONT fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD)
+#define CUSTOM_MENU_LIST_FONT fonts_get_system_font(FONT_KEY_GOTHIC_24)
 
 struct CustomMenuLayer{
   CustomWindow* cwindow;
@@ -189,15 +180,14 @@ struct CustomMenuLayer{
 
 void custom_menu_layer_draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_index, void *callback_context) {
   CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "draw text call!");
-  graphics_draw_text(ctx, this->cwindow->content->elements[cell_index->row], CUSTOM_MENU_LIST_FONT, layer_get_bounds(cell_layer),
-    GTextOverflowModeWordWrap, GTextAlignmentLeft, NULL);
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "drawn text: %s", this->cwindow->content->elements[cell_index->row]);
+  graphics_context_set_text_color(ctx, GColorBlack);
+  GRect s = (GRect){.origin =  (GPoint){.x  = 5, .y = 0}, .size = (GSize){.w = 144, .h=255}};
+  graphics_draw_text(ctx, this->cwindow->content->elements[cell_index->row], CUSTOM_MENU_LIST_FONT, s,
+    GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
 }
 
 uint16_t custom_menu_layer_num_rows(struct MenuLayer *menu_layer, uint16_t section_index, void *callback_context) {
   CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "num_rows call: %u", (int)this->cwindow->content->elementCount);
   return this->cwindow->content->elementCount;
 }
 
@@ -209,11 +199,10 @@ int16_t custom_menu_layer_cell_height(struct MenuLayer *menu_layer, MenuIndex *c
     CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
     GSize s = graphics_text_layout_get_content_size(this->cwindow->content->elements[cell_index->row],
       CUSTOM_MENU_LIST_FONT,
-      (GRect){.origin = GPointZero, .size = (GSize){.w = 144, .h=255}},
-      GTextOverflowModeWordWrap,
+      (GRect){.origin = (GPoint){.x  = 5, .y = 0}, .size = (GSize){.w = 144, .h=255}},
+      GTextOverflowModeTrailingEllipsis,
       GTextAlignmentLeft);
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "cell_h call(%i): %u", cell_index->row, s.h);
-    return s.h;
+    return s.h + 5;
 }
 
 int16_t custom_menu_layer_header_height(struct MenuLayer *menu_layer, uint16_t section_index, void *callback_context) {
@@ -223,7 +212,6 @@ int16_t custom_menu_layer_header_height(struct MenuLayer *menu_layer, uint16_t s
 void custom_menu_layer_draw_header(GContext *ctx, const Layer *cell_layer, uint16_t section_index, void *callback_context) {
   CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
   menu_cell_basic_header_draw(ctx, cell_layer,  this->title);
-
 }
 
 void custom_menu_layer_destroy(CustomMenuLayer* this) {
