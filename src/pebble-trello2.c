@@ -253,7 +253,7 @@ CustomMenuLayer* custom_menu_layer_create(CustomWindow* cwindow) {
   CustomMenuLayer* this = malloc(sizeof(CustomMenuLayer));
   memset(this, 0, sizeof(CustomMenuLayer));
   this->cwindow = cwindow;
-  this->menuLayer = menu_layer_create((GRect) { .origin = GPointZero, .size = (GSize) {.w = 144, .h = 168} }/*layer_get_bounds(window_get_root_layer(this->cwindow->window))*/);
+  this->menuLayer = menu_layer_create(layer_get_bounds(window_get_root_layer(this->cwindow->window)));
   this->callbacks = (MenuLayerCallbacks){
     .draw_header = custom_menu_layer_draw_header,
     .draw_row = custom_menu_layer_draw_row,
