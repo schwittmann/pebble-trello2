@@ -292,7 +292,6 @@ static SelectCheckitemMessageList resendList = {0,  NULL};
 void resend_timer_callback(void* data) {
   if(resendList.count == 0) {
     if(resendTimer) {
-      app_timer_cancel(resendTimer);
       resendTimer = NULL;
     }
     return;
@@ -327,7 +326,6 @@ void resend_timer_callback(void* data) {
       resendList.messages = NULL;
 
       if(resendTimer) {
-        app_timer_cancel(resendTimer);
         resendTimer = NULL;
       }
       return;
