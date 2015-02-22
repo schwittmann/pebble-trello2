@@ -2,6 +2,14 @@
 #include <pebble-trello2.h>
 #include <string.h>
 
+void* iso_realloc(void* ptr, size_t size) {
+  if (ptr != NULL) {
+    return realloc(ptr, size);
+  } else {
+    return malloc(size);
+  }
+}
+
 char* strdup(const char* in) {
   char* t = malloc(strlen(in)+1);
   strcpy(t, in);
@@ -268,7 +276,67 @@ CustomMenuLayer* custom_menu_layer_create(CustomWindow* cwindow) {
   return this;
 }
 
+typedef struct {
+  int index;
+  bool state;
+} SelectCheckitemMessage;
 
+typedef struct {
+  int count;
+  SelectCheckitemMessage *messages;
+} SelectCheckitemMessageList;
+
+static AppTimer* resendTimer = NULL;
+static SelectCheckitemMessageList resendList = {0,  NULL};
+
+void resend_timer_callback(void* data) {
+  if(resendList.count == 0) {
+    if(resendTimer) {
+      app_timer_cancel(resendTimer);
+      resendTimer = NULL;
+    }
+    return;
+  }
+  DictionaryIterator *iter;
+  AppMessageResult result = app_message_outbox_begin(&iter);
+  if (iter == NULL) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at resending. Result: %u", result);
+    app_timer_register(500, resend_timer_callback, NULL);
+    return;
+  }
+
+  SelectCheckitemMessage* msg = resendList.messages + (resendList.count -1);
+
+  Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_SELECTED_ITEM);
+  dict_write_tuplet(iter, &tuple);
+
+  Tuplet tuple2 = TupletInteger(MESSAGE_ITEMIDX_KEY, msg->index);
+  dict_write_tuplet(iter, &tuple2);
+
+  Tuplet tuple3 = TupletInteger(MESSAGE_ITEMSTATE_KEY, msg->state);
+  dict_write_tuplet(iter, &tuple3);
+
+  dict_write_end(iter);
+
+  result = app_message_outbox_send();
+
+  if(result == APP_MSG_OK) {
+    resendList.count--;
+    if (resendList.count == 0) {
+      free(resendList.messages);
+      resendList.messages = NULL;
+
+      if(resendTimer) {
+        app_timer_cancel(resendTimer);
+        resendTimer = NULL;
+      }
+      return;
+    }
+  }
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at finishing resending. Result: %u", result);
+  app_timer_register(500, resend_timer_callback, NULL);
+
+}
 
 #define NUMBER_IMAGES  4
 
@@ -556,13 +624,25 @@ static void menu_checklist_item_select_callback(int index, void* ctx) {
   AppMessageResult result = app_message_outbox_begin(&iter);
   if (iter == NULL) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at sending. Result: %u", result);
+    if (result == APP_MSG_BUSY) {
+      // set to waiting state
+      checklist->elementState[index] = toggleState(checklist->elementState[index]);
+      CustomMenuLayer *cmenu = ctx;
+      menu_layer_reload_data(cmenu->menuLayer);
+
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Queued message");
+      resendList.messages = iso_realloc(resendList.messages, (++resendList.count) * sizeof(SelectCheckitemMessage));
+      resendList.messages[resendList.count-1] = (SelectCheckitemMessage) {.index = index, .state = isCheckedState(checklist->elementState[index])};
+      if (!resendTimer) {
+        resendTimer = app_timer_register(500, resend_timer_callback, NULL);
+      }
+    }
     return;
   }
 
   // set to waiting state
 
   checklist->elementState[index] = toggleState(checklist->elementState[index]);
-
   CustomMenuLayer *cmenu = ctx;
   menu_layer_reload_data(cmenu->menuLayer);
 

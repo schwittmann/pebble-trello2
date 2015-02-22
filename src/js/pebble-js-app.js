@@ -23,30 +23,6 @@ var DEBUG_DATA = {
 };
 
 function makeRequest(urlpath, success, fail, verb) {
-  function decodeUtf8(utftext) {
-    return utftext;
-    var minimalMappingUtf8ToIso8859 = {
-      228:'ae',
-      196:'Ae',
-      252:'ue',
-      220:'Ue',
-      246:'oe',
-      214:'Oe',
-      223:'ss'
-    };
-    var ret = "";
-    for(var i=0; i<utftext.length; ++i) {
-      if(utftext.charCodeAt(i) in minimalMappingUtf8ToIso8859) {
-        ret += minimalMappingUtf8ToIso8859[utftext.charCodeAt(i)];
-      } else {
-        ret += utftext[i];
-      }
-      if (utftext.charCodeAt(i) > 127) {
-        //console.log("charcode:"+utftext.charCodeAt(i));
-      }
-    }
-    return ret;
-  }
   var req = new XMLHttpRequest();
   if(!verb) {
     verb = "get";
@@ -65,22 +41,25 @@ function makeRequest(urlpath, success, fail, verb) {
   req.onload = function(e) {
     if (req.readyState != 4)
         return;
+    clearTimeout(timeout);
     if(req.status == 200) {
-      var decoded;
-      //console.log("Pre decode:"+window.btoa(req.responseText));
-      try {
-        decoded = decodeUtf8(req.responseText);
-      } catch(err) {
-        console.log("decoding failed:"+err);
-        return;
-      }
-      //console.log("got decoded:"+decoded);
-      success(JSON.parse(decoded));
+      success(JSON.parse(req.responseText));
     } else {
       console.log("Http request failed :("+ req.responseText);
       fail(req.responseText, req.status);
     }
   };
+  var tries = 0;
+  var timeout = setTimeout(function(){
+    console.log("Timeout, aborting request");
+    req.abort();
+    if(tries++ <3) {
+      console.log("Retrying request...");
+      makeRequest(urlpath, success, fail, verb);
+    } else {
+      fail("Request timed out", 400);
+    }
+  }, 5000);
   req.send(null);
 }
 
