@@ -3,7 +3,7 @@
   "shortName": "Trebble",
   "longName": "Trebble: pebble-trello 2",
   "companyName": "Schwittmann",
-  "versionCode": 2,
+  "versionCode": 1,
   "versionLabel": "2.5",
   "watchapp": {
     "watchface": false

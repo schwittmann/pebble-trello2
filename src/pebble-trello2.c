@@ -27,6 +27,15 @@ char* strndup(const char *s, size_t n) {
 }
 
 
+/*
+Deployment builts:
+
+
+#undef APP_LOG
+#define APP_LOG(args...)
+
+*/
+
 //// LIST
 
 
@@ -290,17 +299,15 @@ static AppTimer* resendTimer = NULL;
 static SelectCheckitemMessageList resendList = {0,  NULL};
 
 void resend_timer_callback(void* data) {
+  resendTimer = NULL;
   if(resendList.count == 0) {
-    if(resendTimer) {
-      resendTimer = NULL;
-    }
     return;
   }
   DictionaryIterator *iter;
   AppMessageResult result = app_message_outbox_begin(&iter);
   if (iter == NULL) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at resending. Result: %u", result);
-    app_timer_register(500, resend_timer_callback, NULL);
+    resendTimer = app_timer_register(500, resend_timer_callback, NULL);
     return;
   }
 
@@ -324,15 +331,11 @@ void resend_timer_callback(void* data) {
     if (resendList.count == 0) {
       free(resendList.messages);
       resendList.messages = NULL;
-
-      if(resendTimer) {
-        resendTimer = NULL;
-      }
       return;
     }
   }
   APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at finishing resending. Result: %u", result);
-  app_timer_register(500, resend_timer_callback, NULL);
+  resendTimer = app_timer_register(500, resend_timer_callback, NULL);
 
 }
 
@@ -495,6 +498,14 @@ static void list_window_unload(Window *window) {
     return;
   }
 
+  if (cwindow == windows+ CWINDOW_CHECKLIST) {
+    // left checklist. pending messages are no longer relevant
+    if(resendList.count) {
+      free(resendList.messages);
+      resendList.messages = NULL;
+      resendList.count = 0;
+    }
+  }
   layer_remove_from_parent(menu_layer_get_layer(cwindow->customMenu->menuLayer));
   custom_menu_layer_destroy(cwindow->customMenu);
   cwindow->customMenu = NULL;
@@ -740,6 +751,10 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
         return;
       }
 
+      if(windows[CWINDOW_CHECKLIST].customMenu == NULL) {
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Got item state changed although no checklist is loaded");
+        return;
+      }
       int itemidx = tuple_get_int(dict_find(iter, MESSAGE_ITEMIDX_KEY));
       int state = tuple_get_int(dict_find(iter, MESSAGE_ITEMSTATE_KEY));
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Raw state %u", state);
