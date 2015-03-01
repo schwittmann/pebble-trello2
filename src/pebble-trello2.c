@@ -36,6 +36,27 @@ Deployment builts:
 
 */
 
+enum ApplicationState {
+  APPSTATE_DISPLAY_ERROR, // dead end, no transitions
+
+  APPSTATE_LOADING_BOARDS,
+  APPSTATE_DISPLAY_BOARDS,
+  APPSTATE_DISPLAY_LISTS,
+
+  APPSTATE_LOADING_CARDS,
+  APPSTATE_DISPLAY_CARDS,
+  APPSTATE_DISPLAY_CHECKLISTS,
+
+  APPSTATE_LOADING_CHECKLIST,
+  APPSTATE_DISPLAY_CHECKLIST
+};
+
+typedef enum ApplicationState ApplicationState;
+
+
+static ApplicationState applicationState = APPSTATE_LOADING_BOARDS;
+
+
 //// LIST
 
 
@@ -187,6 +208,17 @@ static CustomWindow windows[CWINDOW_SIZE];
 
 
 
+void display_message_failed(AppMessageResult reason) {
+  char* err = malloc(53);
+  snprintf(err, 53, "Failed to send message to phone. Errorcode: %d", reason);
+  window_set_user_data(windows[CWINDOW_LOADING].window, err);
+  window_stack_pop_all(false);
+  window_stack_push(windows[CWINDOW_LOADING].window, false);
+  applicationState =  APPSTATE_DISPLAY_ERROR;
+  return;
+}
+
+
 #define CUSTOM_MENU_LIST_FONT fonts_get_system_font(FONT_KEY_GOTHIC_24)
 
 struct CustomMenuLayer{
@@ -297,6 +329,8 @@ typedef struct {
 
 static AppTimer* resendTimer = NULL;
 static SelectCheckitemMessageList resendList = {0,  NULL};
+
+
 
 void resend_timer_callback(void* data) {
   resendTimer = NULL;
@@ -541,6 +575,7 @@ static void menu_list_select_callback(int index, void *ctx) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Menu list: selected index %i", index);
   window_set_user_data(windows[CWINDOW_LOADING].window, "Loading Cards...");
   window_stack_push(windows[CWINDOW_LOADING].window, true);
+  applicationState = APPSTATE_LOADING_CARDS;
 
   // remove boards and lists from stack: memory constraints
   window_stack_remove(windows[CWINDOW_BOARDS].window, false);
@@ -551,11 +586,11 @@ static void menu_list_select_callback(int index, void *ctx) {
   firstTree = NULL;
   selected_list_index = index;
 
-
   DictionaryIterator *iter;
   AppMessageResult result = app_message_outbox_begin(&iter);
   if (iter == NULL) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at sending. Result: %u", result);
+    display_message_failed(result);
     return;
   }
 
@@ -571,7 +606,10 @@ static void menu_list_select_callback(int index, void *ctx) {
 
   dict_write_end(iter);
 
-  app_message_outbox_send();
+  result = app_message_outbox_send();
+  if(result != APP_MSG_OK) {
+    display_message_failed(result);
+  }
 }
 
 static void menu_checklists_select_callback(int index, void *ctx) {
@@ -581,11 +619,13 @@ static void menu_checklists_select_callback(int index, void *ctx) {
 
   window_set_user_data(windows[CWINDOW_LOADING].window, "Loading Checklist...");
   window_stack_push(windows[CWINDOW_LOADING].window, true);
+  applicationState = APPSTATE_LOADING_CHECKLIST;
 
   DictionaryIterator *iter;
   AppMessageResult result = app_message_outbox_begin(&iter);
   if (iter == NULL) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at sending. Result: %u", result);
+    display_message_failed(result);
     return;
   }
 
@@ -607,7 +647,9 @@ static void menu_checklists_select_callback(int index, void *ctx) {
 
   dict_write_end(iter);
 
-  app_message_outbox_send();
+  result = app_message_outbox_send();
+  if(result != APP_MSG_OK)
+    display_message_failed(result);
 }
 
 
@@ -676,6 +718,7 @@ static void menu_cards_select_callback(int index, void *ctx) {
   windows[CWINDOW_CHECKLISTS].content = secondTree->sublists[index];
   createListWindow(&windows[CWINDOW_CHECKLISTS], menu_checklists_select_callback, secondTree->list->elements[index]);
   window_stack_push(windows[CWINDOW_CHECKLISTS].window, true);
+  applicationState = APPSTATE_DISPLAY_CHECKLISTS;
   if(secondTree->sublists[index]->elementCount == 1) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Only one checklist, selecting...");
     window_stack_remove(windows[CWINDOW_CHECKLISTS].window, true);
@@ -690,6 +733,7 @@ static void menu_board_select_callback(int index, void *ctx) {
   windows[CWINDOW_LISTS].content = firstTree->sublists[index];
   createListWindow(&windows[CWINDOW_LISTS], menu_list_select_callback, firstTree->list->elements[index]);
   window_stack_push(windows[CWINDOW_LISTS].window, true);
+  applicationState = APPSTATE_DISPLAY_LISTS;
 }
 
 static void in_received_handler(DictionaryIterator *iter, void *context) {
@@ -699,14 +743,23 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Message without type!");
     return;
   }
-  switch(tuple_get_int(type)) {
+  int intType = tuple_get_int(type);
+
+  const char* failmsg = "Received msg type %d in application state %d. Ignore.";
+
+  switch(intType) {
     case MESSAGE_TYPE_BOARDS:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Got type boards!");
+      if(applicationState != APPSTATE_LOADING_BOARDS) {
+        APP_LOG(APP_LOG_LEVEL_DEBUG, failmsg, intType, applicationState);
+        return;
+      }
       deserialize_simple_tree(iter, firstTree);
       windows[CWINDOW_BOARDS].content = firstTree->list;
       createListWindow(&windows[CWINDOW_BOARDS], menu_board_select_callback, "Boards");
       window_stack_remove(windows[CWINDOW_LOADING].window, false);
       window_stack_push(windows[CWINDOW_BOARDS].window, true);
+      applicationState = APPSTATE_DISPLAY_BOARDS;
       if(firstTree->list->elementCount == 1) {
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Only one board, selecting...");
         window_stack_remove(windows[CWINDOW_BOARDS].window, true);
@@ -715,11 +768,16 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       break;
     case MESSAGE_TYPE_CARDS:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Got type cards!");
+      if(applicationState != APPSTATE_LOADING_CARDS) {
+        APP_LOG(APP_LOG_LEVEL_DEBUG, failmsg, intType, applicationState);
+        return;
+      }
       deserialize_simple_tree(iter, secondTree);
       windows[CWINDOW_CARDS].content = secondTree->list;
       createListWindow(&windows[CWINDOW_CARDS], menu_cards_select_callback, "Cards");
       window_stack_remove(windows[CWINDOW_LOADING].window, false);
       window_stack_push(windows[CWINDOW_CARDS].window, true);
+      applicationState = APPSTATE_DISPLAY_CARDS;
       if(secondTree->list->elementCount == 1) {
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Only one card, selecting...");
         window_stack_remove(windows[CWINDOW_CARDS].window, true);
@@ -728,6 +786,10 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       break;
     case MESSAGE_TYPE_CHECKLIST:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Got type checklist!");
+      if(applicationState != APPSTATE_LOADING_CHECKLIST) {
+        APP_LOG(APP_LOG_LEVEL_DEBUG, failmsg, intType, applicationState);
+        return;
+      }
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
       deserialize_checklist(iter, &checklist);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used2: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
@@ -737,14 +799,20 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       window_stack_push(windows[CWINDOW_CHECKLIST].window, true);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used4: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
       window_stack_remove(windows[CWINDOW_LOADING].window, false);
+      applicationState = APPSTATE_DISPLAY_CHECKLIST;
       break;
     case MESSAGE_TYPE_INIT:
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Got type init!");
       if(tuple_get_int(value) != 1) {
-        text_layer_set_text(loading_text_layer, "Token missing. Please open settings on phone.");
+        text_layer_set_text(loading_text_layer, "Token missing. Please open settings on phone and restart watchapp.");
+        applicationState = APPSTATE_DISPLAY_ERROR;
       }
       break;
     case MESSAGE_TYPE_ITEM_STATE_CHANGED: {
+      if(applicationState != APPSTATE_DISPLAY_CHECKLIST) {
+        APP_LOG(APP_LOG_LEVEL_DEBUG, failmsg, intType, applicationState);
+        return;
+      }
       char* receivedChecklistId = tuple_get_str(dict_find(iter, MESSAGE_CHECKLISTID_DICT_KEY));
       if(strcmp(receivedChecklistId, checklistID) != 0) {
         APP_LOG(APP_LOG_LEVEL_DEBUG, "Got outdated checklist update. %s, expected %s", receivedChecklistId, checklistID);
@@ -770,16 +838,27 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       window_set_user_data(windows[CWINDOW_LOADING].window, strdup(text));
       window_stack_pop_all(false);
       window_stack_push(windows[CWINDOW_LOADING].window, false);
+      applicationState = APPSTATE_DISPLAY_ERROR;
     }
   }
 }
 
 static void in_dropped_handler(AppMessageResult reason, void *context) {
+  // no need for special handling here. phone will get NACK and resend
   APP_LOG(APP_LOG_LEVEL_DEBUG, "App Message Dropped!");
 }
 
+
 static void out_failed_handler(DictionaryIterator *failed, AppMessageResult reason, void *context) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "App Message Failed to Send! Reason:%u", reason);
+
+  if (applicationState == APPSTATE_LOADING_BOARDS) {
+    display_message_failed(reason);
+    return;
+  }
+
+  // TODO: implement resending
+
 }
 
 static void app_message_init(void) {
@@ -788,13 +867,36 @@ static void app_message_init(void) {
   app_message_register_inbox_dropped(in_dropped_handler);
   app_message_register_outbox_failed(out_failed_handler);
   // Init buffers
-  app_message_open(app_message_inbox_size_maximum(), app_message_outbox_size_maximum());
+  app_message_open(app_message_inbox_size_maximum(), APP_MESSAGE_OUTBOX_SIZE_MINIMUM);
 }
 
 
 static void loading_window_unload(Window *window) {
   if(loading_text_layer != NULL)
     text_layer_destroy(loading_text_layer);
+}
+
+
+void initial_ping_callback(void* data) {
+  if(applicationState != APPSTATE_LOADING_BOARDS)
+    return;
+
+  DictionaryIterator* iter;
+
+  AppMessageResult result = app_message_outbox_begin(&iter);
+  if(result != APP_MSG_OK) {
+    display_message_failed(result);
+    return;
+  }
+  Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_PING);
+  dict_write_tuplet(iter, &tuple);
+  dict_write_end(iter);
+
+  result = app_message_outbox_send();
+  if(result != APP_MSG_OK) {
+    display_message_failed(result);
+    return;
+  }
 }
 
 static void init(void) {
@@ -815,6 +917,9 @@ static void init(void) {
   });
   const bool animated = true;
   window_stack_push(windows[CWINDOW_LOADING].window, animated);
+
+  // ping phone, causes send_fail if no app is running
+  app_timer_register(5000, initial_ping_callback, NULL);
 }
 
 static void deinit(void) {

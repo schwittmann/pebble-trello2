@@ -64,6 +64,20 @@ function makeRequest(urlpath, success, fail, verb) {
 }
 
 
+/* Send data to pebble reliably
+*/
+function sendToPebble(data) {
+  Pebble.sendAppMessage(data, function() {
+    console.log("pebble acked msg type "+data.type);
+  }, function() {
+    console.log("pebble nacked msg type "+data.type+", resending");
+    // timeout to give watch some time for recovering
+    setTimeout(function() {
+      sendToPebble(data);
+    }, 100);
+  });
+}
+
 
 Pebble.addEventListener("ready",
 	function(e) {
@@ -77,7 +91,7 @@ Pebble.addEventListener("ready",
       var msg = {};
       msg.type = MESSAGE_TYPE_INIT;
       msg.value = hasToken;
-      Pebble.sendAppMessage(msg);
+      sendToPebble(msg);
     }
 	}
 );
@@ -151,7 +165,7 @@ Pebble.addEventListener("appmessage",
           //update our cache
           item.state = state?"complete":"incomplete";
           msg.itemstate = state;
-          Pebble.sendAppMessage(msg);
+          sendToPebble(msg);
         }
         makeRequest("cards/"+globalData.activeCard.id+"/checklist/"+checklistid+"/checkItem/"+item.id+"/state?value="+newState, function() {
           sendResult(false);
@@ -175,7 +189,7 @@ function sendActiveChecklist() {
 
   msg.checklistid = globalData.activeChecklist.id;
 
-  Pebble.sendAppMessage(msg);
+  sendToPebble(msg);
 }
 
 function loadBoards() {
@@ -219,7 +233,7 @@ function loadedCards(cards) {
   msg.type = MESSAGE_TYPE_CARDS;
   addData(msg, data);
 
-  Pebble.sendAppMessage(msg);
+  sendToPebble(msg);
 }
 
 function posSorting(a, b) {
@@ -243,7 +257,7 @@ function loadedUser(user) {
   msg.type = MESSAGE_TYPE_BOARDS;
   addData(msg, data);
   
-  Pebble.sendAppMessage(msg);
+  sendToPebble(msg);
 }
 
 function loadingFailed(txt, code) {
@@ -252,5 +266,5 @@ function loadingFailed(txt, code) {
   msg.type = MESSAGE_TYPE_HTTP_FAIL;
   msg.failText = "Network failed ("+code+"):\n"+txt;
   
-  Pebble.sendAppMessage(msg);
+  sendToPebble(msg);
 }
