@@ -324,11 +324,13 @@ typedef struct {
 
 typedef struct {
   int count;
+  // dictionary iterator to the outgoing SelectCheckitemMessage
+  DictionaryIterator *sending;
   SelectCheckitemMessage *messages;
 } SelectCheckitemMessageList;
 
 static AppTimer* resendTimer = NULL;
-static SelectCheckitemMessageList resendList = {0,  NULL};
+static SelectCheckitemMessageList resendList = {0, NULL, NULL};
 
 
 
@@ -337,6 +339,11 @@ void resend_timer_callback(void* data) {
   if(resendList.count == 0) {
     return;
   }
+
+  if(resendList.sending) {
+    return;
+  }
+
   DictionaryIterator *iter;
   AppMessageResult result = app_message_outbox_begin(&iter);
   if (iter == NULL) {
@@ -345,7 +352,7 @@ void resend_timer_callback(void* data) {
     return;
   }
 
-  SelectCheckitemMessage* msg = resendList.messages + (resendList.count -1);
+  SelectCheckitemMessage* msg = resendList.messages;
 
   Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_SELECTED_ITEM);
   dict_write_tuplet(iter, &tuple);
@@ -361,12 +368,9 @@ void resend_timer_callback(void* data) {
   result = app_message_outbox_send();
 
   if(result == APP_MSG_OK) {
-    resendList.count--;
-    if (resendList.count == 0) {
-      free(resendList.messages);
-      resendList.messages = NULL;
-      return;
-    }
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Resendlist: put item %u in outbox", msg->index);
+    resendList.sending = iter;
+    return;
   }
   APP_LOG(APP_LOG_LEVEL_DEBUG, "null iter at finishing resending. Result: %u", result);
   resendTimer = app_timer_register(500, resend_timer_callback, NULL);
@@ -827,7 +831,7 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       int state = tuple_get_int(dict_find(iter, MESSAGE_ITEMSTATE_KEY));
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Raw state %u", state);
       checklist->elementState[itemidx] = intStateToState(state);
-      APP_LOG(APP_LOG_LEVEL_DEBUG, "Set element state to %u", checklist->elementState[itemidx]);
+      APP_LOG(APP_LOG_LEVEL_DEBUG, "Set element's %u state to %u", itemidx, checklist->elementState[itemidx]);
 
       menu_layer_reload_data(windows[CWINDOW_CHECKLIST].customMenu->menuLayer);
       break;
@@ -849,7 +853,27 @@ static void in_dropped_handler(AppMessageResult reason, void *context) {
 }
 
 
-static void out_failed_handler(DictionaryIterator *failed, AppMessageResult reason, void *context) {
+static void out_success_handler(DictionaryIterator *iter, void *context) {
+  if(iter == NULL) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Got NULL iter in out_success_handler");
+    return;
+  }
+  if (iter == resendList.sending) {
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Successfully sent index %u from outbox", resendList.messages->index);
+    resendList.sending = NULL;
+    resendList.count--;
+    if(resendList.count == 0){
+      free(resendList.messages);
+      resendList.messages = NULL;
+    } else {
+      memmove(resendList.messages, resendList.messages+1, sizeof(SelectCheckitemMessage)*resendList.count);
+      if(!resendTimer)
+        resendTimer = app_timer_register(100, resend_timer_callback, NULL);
+    }
+  }
+}
+
+static void out_failed_handler(DictionaryIterator *iter, AppMessageResult reason, void *context) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "App Message Failed to Send! Reason:%u", reason);
 
   if (applicationState == APPSTATE_LOADING_BOARDS) {
@@ -857,8 +881,12 @@ static void out_failed_handler(DictionaryIterator *failed, AppMessageResult reas
     return;
   }
 
-  // TODO: implement resending
 
+  if (iter == resendList.sending) {
+    resendList.sending = NULL;
+    if(!resendTimer)
+      resendTimer = app_timer_register(100, resend_timer_callback, NULL);
+  }
 }
 
 static void app_message_init(void) {
@@ -866,6 +894,7 @@ static void app_message_init(void) {
   app_message_register_inbox_received(in_received_handler);
   app_message_register_inbox_dropped(in_dropped_handler);
   app_message_register_outbox_failed(out_failed_handler);
+  app_message_register_outbox_sent(out_success_handler);
   // Init buffers
   app_message_open(app_message_inbox_size_maximum(), APP_MESSAGE_OUTBOX_SIZE_MINIMUM);
 }

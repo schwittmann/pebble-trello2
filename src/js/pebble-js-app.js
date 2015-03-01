@@ -147,6 +147,10 @@ Pebble.addEventListener("appmessage",
         break;
       case MESSAGE_TYPE_SELECTED_ITEM:
         console.log("Got type MESSAGE_TYPE_SELECTED_ITEM");
+        if (!(e.payload.itemidx in globalData.activeChecklist.checkItems)) {
+          console.log("Error, unable to find item index in checklist");
+          return;
+        }
         var item = globalData.activeChecklist.checkItems[e.payload.itemidx];
         console.log("toggled item "+item.name+" to "+e.payload.itemstate);
 
