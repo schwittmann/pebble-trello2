@@ -35,6 +35,11 @@
       },
       {
         "type": "png",
+        "name": "TRELLO_INFO",
+        "file": "images/trello-info.png"
+      },
+      {
+        "type": "png",
         "name": "TRELLO_PENDING",
         "file": "images/trello-pending.png"
       },

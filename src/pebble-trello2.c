@@ -26,6 +26,7 @@ char* strndup(const char *s, size_t n) {
   return o;
 }
 
+#define SHOW_DESCRIPTION "Card description"
 
 /*
 Deployment builts:
@@ -72,7 +73,7 @@ enum ElementState{
 
 typedef enum ElementState ElementState;
 
-GBitmap* stateToIcon(ElementState s);
+GBitmap* stateToIcon(ElementState *s, bool showIcon);
 
 ElementState intStateToState(int state) {
   if(state)
@@ -225,13 +226,14 @@ struct CustomMenuLayer{
   CustomWindow* cwindow;
   MenuLayer* menuLayer;
   const char* title;
+  bool cardDescription;
   MenuLayerCallbacks callbacks;
   SimpleMenuLayerSelectCallback callback;
 };
 
-GRect custom_menu_layer_get_text_rect(ElementState* s) {
+GRect custom_menu_layer_get_text_rect(bool showIcon) {
   GRect ret = (GRect){.origin =  (GPoint){.x  = 5, .y = 0}, .size = (GSize){.w = 144-5, .h= 255}};
-  if(s) {
+  if(showIcon) {
     ret.origin.x += 12;
     ret.size.w -= 12;
   }
@@ -239,15 +241,27 @@ GRect custom_menu_layer_get_text_rect(ElementState* s) {
   return ret;
 }
 
+bool custom_menu_fake_index(CustomMenuLayer* this) {
+  return this->cardDescription && this->cwindow->content->elements[0][0] == '\0';
+}
+
 void custom_menu_layer_draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_index, void *callback_context) {
   CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
   List * content = this->cwindow->content;
+  if (custom_menu_fake_index(this)) {
+    cell_index->row += 1;
+  }
+  bool cardDescription = this->cardDescription && cell_index->row == 0 && content->elements[0][0];
   graphics_context_set_text_color(ctx, GColorBlack);
-  GRect s = custom_menu_layer_get_text_rect(content->elementState? content->elementState+cell_index->row : NULL);
-  graphics_draw_text(ctx, content->elements[cell_index->row], CUSTOM_MENU_LIST_FONT, s,
+  GRect s = custom_menu_layer_get_text_rect(cardDescription || (content->elementState? content->elementState+cell_index->row : NULL));
+  const char* text = content->elements[cell_index->row];
+  if(cardDescription)
+    text = SHOW_DESCRIPTION;
+  graphics_draw_text(ctx, text, CUSTOM_MENU_LIST_FONT, s,
     GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
-  if(content->elementState) {
-    GBitmap *icon = stateToIcon(content->elementState[cell_index->row]);
+  if(content->elementState || cardDescription) {
+    GBitmap *icon = stateToIcon(content->elementState+cell_index->row, cardDescription);
+
     graphics_context_set_compositing_mode(ctx, GCompOpAssign);
     graphics_draw_bitmap_in_rect(ctx, icon, (GRect){.origin = (GPoint){.x = 1, .y = 10}, .size = icon->bounds.size});
   }
@@ -255,7 +269,7 @@ void custom_menu_layer_draw_row(GContext *ctx, const Layer *cell_layer, MenuInde
 
 uint16_t custom_menu_layer_num_rows(struct MenuLayer *menu_layer, uint16_t section_index, void *callback_context) {
   CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
-  return this->cwindow->content->elementCount;
+  return this->cwindow->content->elementCount - (custom_menu_fake_index(this)?1:0);
 }
 
 uint16_t custom_menu_layer_num_sections(struct MenuLayer *menu_layer, void *callback_context) {
@@ -269,12 +283,20 @@ void custom_menu_set_select_callback(CustomMenuLayer* this, SimpleMenuLayerSelec
 int16_t custom_menu_layer_cell_height(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *callback_context) {
     CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
     List * content = this->cwindow->content;
-    GRect text_bounds = custom_menu_layer_get_text_rect(content->elementState? content->elementState+cell_index->row : NULL);
-    GSize s = graphics_text_layout_get_content_size(this->cwindow->content->elements[cell_index->row],
+    if (custom_menu_fake_index(this)) {
+      cell_index->row += 1;
+    }
+    bool cardDescription = this->cardDescription && cell_index->row == 0;
+    GRect text_bounds = custom_menu_layer_get_text_rect(cardDescription || (content->elementState? content->elementState+cell_index->row : NULL));
+    const char* text = this->cwindow->content->elements[cell_index->row];
+    if(cardDescription)
+      text = SHOW_DESCRIPTION;
+    GSize s = graphics_text_layout_get_content_size(text,
       CUSTOM_MENU_LIST_FONT,
       text_bounds,
       GTextOverflowModeTrailingEllipsis,
       GTextAlignmentLeft);
+
     return s.h + 5;
 }
 
@@ -298,10 +320,11 @@ void custom_menu_layer_select(struct MenuLayer *menu_layer, MenuIndex *cell_inde
     this->callback(cell_index->row, this);
 }
 
-CustomMenuLayer* custom_menu_layer_create(CustomWindow* cwindow) {
+CustomMenuLayer* custom_menu_layer_create(CustomWindow* cwindow, bool cardDescription) {
   CustomMenuLayer* this = malloc(sizeof(CustomMenuLayer));
   memset(this, 0, sizeof(CustomMenuLayer));
   this->cwindow = cwindow;
+  this->cardDescription = cardDescription;
   this->menuLayer = menu_layer_create(layer_get_bounds(window_get_root_layer(this->cwindow->window)));
   this->callbacks = (MenuLayerCallbacks){
     .draw_header = custom_menu_layer_draw_header,
@@ -377,7 +400,7 @@ void resend_timer_callback(void* data) {
 
 }
 
-#define NUMBER_IMAGES  4
+#define NUMBER_IMAGES  5
 
 typedef struct {
   uint32_t id;
@@ -388,6 +411,7 @@ typedef struct {
 LoadedBitmap loadedBitmaps[NUMBER_IMAGES] = {
   {RESOURCE_ID_TRELLO_BOX, NULL},
   {RESOURCE_ID_TRELLO_CHECKED, NULL},
+  {RESOURCE_ID_TRELLO_INFO, NULL},
   {RESOURCE_ID_TRELLO_PENDING, NULL},
   {RESOURCE_ID_TRELLO_LOGO, NULL}
 };
@@ -395,13 +419,16 @@ LoadedBitmap loadedBitmaps[NUMBER_IMAGES] = {
 enum {
   RES_IDX_TRELLO_BOX,
   RES_IDX_TRELLO_CHECKED,
+  RES_IDX_TRELLO_INFO,
   RES_IDX_TRELLO_PENDING,
   RES_IDX_TRELLO_LOGO
 };
 
 
-GBitmap* stateToIcon(ElementState s) {
-  switch(s) {
+GBitmap* stateToIcon(ElementState *s, bool showInfo) {
+  if(showInfo)
+    return loadedBitmaps[RES_IDX_TRELLO_INFO].bitmap;
+  switch(*s) {
     case STATE_PENDING_C:
     case STATE_PENDING_UC:
       return loadedBitmaps[RES_IDX_TRELLO_PENDING].bitmap;
@@ -550,6 +577,7 @@ static void list_window_unload(Window *window) {
 }
 
 void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callback, const char* title) {
+  bool cardDescription = window == &windows[CWINDOW_CHECKLISTS];
 
   window_set_window_handlers(window->window, (WindowHandlers) {
   .unload = list_window_unload,
@@ -557,7 +585,7 @@ void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callba
 
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Creating list window with %i Elements", window->content->elementCount);
 
-  window->customMenu = custom_menu_layer_create(window);
+  window->customMenu = custom_menu_layer_create(window, cardDescription);
   window->customMenu->title = title;
   custom_menu_set_select_callback(window->customMenu, callback);
 
@@ -616,8 +644,64 @@ static void menu_list_select_callback(int index, void *ctx) {
   }
 }
 
+typedef struct {
+  TextLayer* headlineLayer;
+  TextLayer* textLayer;
+  ScrollLayer* scrollLayer;
+
+} CardInfo;
+
+static void scroll_window_unload(Window *window) {
+  CardInfo *cardInfo = window_get_user_data(window);
+  scroll_layer_destroy(cardInfo->scrollLayer);
+  text_layer_destroy(cardInfo->headlineLayer);
+  text_layer_destroy(cardInfo->textLayer);
+  free(cardInfo);
+  window_destroy(window);
+}
+
 static void menu_checklists_select_callback(int index, void *ctx) {
   very_short_vibe();
+
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Checklists: selected index %i", index);
+
+
+  // checklist selection 0: reserved for info menu
+  if (index == 0) {
+    CardInfo* cardInfo = malloc(sizeof(CardInfo));
+    Window* scroll_window = window_create();
+    const int headerHeight = 32;
+    cardInfo->headlineLayer = text_layer_create(GRect(0, 0, 144, headerHeight));
+    text_layer_set_text(cardInfo->headlineLayer, windows[CWINDOW_CARDS].content->elements[selected_card_index]);
+    text_layer_set_font(cardInfo->headlineLayer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+
+    cardInfo->textLayer = text_layer_create(GRect(0, headerHeight, 144, 2000));
+    text_layer_set_text(cardInfo->textLayer, windows[CWINDOW_CHECKLISTS].content->elements[0]);
+    text_layer_set_font(cardInfo->textLayer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
+
+    cardInfo->scrollLayer = scroll_layer_create(layer_get_bounds(window_get_root_layer(windows[CWINDOW_CHECKLISTS].window)));
+    scroll_layer_add_child(cardInfo->scrollLayer, text_layer_get_layer(cardInfo->headlineLayer));
+    scroll_layer_add_child(cardInfo->scrollLayer, text_layer_get_layer(cardInfo->textLayer));
+    GSize contentSize = text_layer_get_content_size(cardInfo->textLayer);
+    contentSize.h += 5+ headerHeight;
+    scroll_layer_set_content_size(cardInfo->scrollLayer, contentSize);
+    layer_add_child(window_get_root_layer(scroll_window), scroll_layer_get_layer(cardInfo->scrollLayer));
+
+    window_set_user_data(scroll_window, cardInfo);
+    scroll_layer_set_click_config_onto_window(cardInfo->scrollLayer, scroll_window);
+    window_set_window_handlers(scroll_window, (WindowHandlers) {
+      .unload = scroll_window_unload,
+    });
+
+    window_stack_push(scroll_window, true);
+
+    return;
+  }
+
+
+  // recalc index
+  index -= 1;
+
   selected_checklist_index = index;
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Checklists: selected index %i", index);
 
@@ -798,7 +882,8 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       deserialize_checklist(iter, &checklist);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used2: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
       windows[CWINDOW_CHECKLIST].content = checklist;
-      createListWindow(&windows[CWINDOW_CHECKLIST], menu_checklist_item_select_callback, windows[CWINDOW_CHECKLISTS].content->elements[selected_checklist_index]);
+      // selected_checklist_index is data structure index. +1, because [0] is card description
+      createListWindow(&windows[CWINDOW_CHECKLIST], menu_checklist_item_select_callback, windows[CWINDOW_CHECKLISTS].content->elements[selected_checklist_index+1]);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used3: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
       window_stack_push(windows[CWINDOW_CHECKLIST].window, true);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used4: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
