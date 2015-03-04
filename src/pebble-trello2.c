@@ -702,7 +702,6 @@ static void menu_checklists_select_callback(int index, void *ctx) {
     });
 
     window_stack_push(scroll_window, true);
-// broken!
     return;
   }
 
