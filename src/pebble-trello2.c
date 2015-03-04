@@ -47,6 +47,7 @@ enum ApplicationState {
   APPSTATE_LOADING_CARDS,
   APPSTATE_DISPLAY_CARDS,
   APPSTATE_DISPLAY_CHECKLISTS,
+  APPSTATE_DISPLAY_CARD_DESCRIPTION,
 
   APPSTATE_LOADING_CHECKLIST,
   APPSTATE_DISPLAY_CHECKLIST
@@ -248,19 +249,20 @@ bool custom_menu_fake_index(CustomMenuLayer* this) {
 void custom_menu_layer_draw_row(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_index, void *callback_context) {
   CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
   List * content = this->cwindow->content;
+  int row = cell_index->row;
   if (custom_menu_fake_index(this)) {
-    cell_index->row += 1;
+    row++;
   }
-  bool cardDescription = this->cardDescription && cell_index->row == 0 && content->elements[0][0];
+  bool cardDescription = this->cardDescription && row == 0 && content->elements[0][0];
   graphics_context_set_text_color(ctx, GColorBlack);
-  GRect s = custom_menu_layer_get_text_rect(cardDescription || (content->elementState? content->elementState+cell_index->row : NULL));
-  const char* text = content->elements[cell_index->row];
+  GRect s = custom_menu_layer_get_text_rect(cardDescription || (content->elementState? content->elementState+row : NULL));
+  const char* text = content->elements[row];
   if(cardDescription)
     text = SHOW_DESCRIPTION;
   graphics_draw_text(ctx, text, CUSTOM_MENU_LIST_FONT, s,
     GTextOverflowModeTrailingEllipsis, GTextAlignmentLeft, NULL);
   if(content->elementState || cardDescription) {
-    GBitmap *icon = stateToIcon(content->elementState+cell_index->row, cardDescription);
+    GBitmap *icon = stateToIcon(content->elementState+row, cardDescription);
 
     graphics_context_set_compositing_mode(ctx, GCompOpAssign);
     graphics_draw_bitmap_in_rect(ctx, icon, (GRect){.origin = (GPoint){.x = 1, .y = 10}, .size = icon->bounds.size});
@@ -283,12 +285,13 @@ void custom_menu_set_select_callback(CustomMenuLayer* this, SimpleMenuLayerSelec
 int16_t custom_menu_layer_cell_height(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *callback_context) {
     CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
     List * content = this->cwindow->content;
+    int row = cell_index->row;
     if (custom_menu_fake_index(this)) {
-      cell_index->row += 1;
+      row++;
     }
-    bool cardDescription = this->cardDescription && cell_index->row == 0;
-    GRect text_bounds = custom_menu_layer_get_text_rect(cardDescription || (content->elementState? content->elementState+cell_index->row : NULL));
-    const char* text = this->cwindow->content->elements[cell_index->row];
+    bool cardDescription = this->cardDescription && row == 0;
+    GRect text_bounds = custom_menu_layer_get_text_rect(cardDescription || (content->elementState? content->elementState+row : NULL));
+    const char* text = this->cwindow->content->elements[row];
     if(cardDescription)
       text = SHOW_DESCRIPTION;
     GSize s = graphics_text_layout_get_content_size(text,
@@ -316,8 +319,11 @@ void custom_menu_layer_destroy(CustomMenuLayer* this) {
 
 void custom_menu_layer_select(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *callback_context) {
   CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
+  int row = cell_index->row;
+  if(custom_menu_fake_index(this))
+    row++;
   if(this->callback)
-    this->callback(cell_index->row, this);
+    this->callback(row, this);
 }
 
 CustomMenuLayer* custom_menu_layer_create(CustomWindow* cwindow, bool cardDescription) {
@@ -583,7 +589,7 @@ void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callba
   .unload = list_window_unload,
   });
 
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "Creating list window with %i Elements", window->content->elementCount);
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Creating list window with %i Elements. cardDescription = %u", window->content->elementCount, (int) cardDescription);
 
   window->customMenu = custom_menu_layer_create(window, cardDescription);
   window->customMenu->title = title;
@@ -658,6 +664,8 @@ static void scroll_window_unload(Window *window) {
   text_layer_destroy(cardInfo->textLayer);
   free(cardInfo);
   window_destroy(window);
+
+  applicationState = APPSTATE_DISPLAY_CHECKLISTS;
 }
 
 static void menu_checklists_select_callback(int index, void *ctx) {
@@ -665,9 +673,9 @@ static void menu_checklists_select_callback(int index, void *ctx) {
 
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Checklists: selected index %i", index);
 
-
   // checklist selection 0: reserved for info menu
   if (index == 0) {
+    applicationState = APPSTATE_DISPLAY_CARD_DESCRIPTION;
     CardInfo* cardInfo = malloc(sizeof(CardInfo));
     Window* scroll_window = window_create();
     const int headerHeight = 32;
@@ -694,7 +702,7 @@ static void menu_checklists_select_callback(int index, void *ctx) {
     });
 
     window_stack_push(scroll_window, true);
-
+// broken!
     return;
   }
 
@@ -806,11 +814,13 @@ static void menu_cards_select_callback(int index, void *ctx) {
   windows[CWINDOW_CHECKLISTS].content = secondTree->sublists[index];
   createListWindow(&windows[CWINDOW_CHECKLISTS], menu_checklists_select_callback, secondTree->list->elements[index]);
   window_stack_push(windows[CWINDOW_CHECKLISTS].window, true);
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Pushed checklists");
   applicationState = APPSTATE_DISPLAY_CHECKLISTS;
-  if(secondTree->sublists[index]->elementCount == 1) {
+  // 2: first one is description. Has to be empty to be skipped
+  if(secondTree->sublists[index]->elementCount == 2 && secondTree->sublists[index]->elements[0][0] == 0) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Only one checklist, selecting...");
     window_stack_remove(windows[CWINDOW_CHECKLISTS].window, true);
-    menu_checklists_select_callback(0, NULL);
+    menu_checklists_select_callback(1, NULL);
   }
 }
 
