@@ -1,10 +1,10 @@
 {
   "uuid": "32bf21ee-b05e-4a80-97b7-21d2e2419a71",
   "shortName": "Trebble",
-  "longName": "Trebble: pebble-trello 2",
+  "longName": "Trebble: Checklists for Trello",
   "companyName": "Schwittmann",
   "versionCode": 1,
-  "versionLabel": "2.8",
+  "versionLabel": "2.9",
   "watchapp": {
     "watchface": false
   },
