@@ -221,7 +221,7 @@ void display_message_failed(AppMessageResult reason) {
 }
 
 
-#define CUSTOM_MENU_LIST_FONT fonts_get_system_font(FONT_KEY_GOTHIC_24)
+#define CUSTOM_MENU_LIST_FONT fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD)
 
 struct CustomMenuLayer{
   CustomWindow* cwindow;
