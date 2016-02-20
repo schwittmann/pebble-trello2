@@ -254,7 +254,6 @@ void custom_menu_layer_draw_row(GContext *ctx, const Layer *cell_layer, MenuInde
     row++;
   }
   bool cardDescription = this->cardDescription && row == 0 && content->elements[0][0];
-  graphics_context_set_text_color(ctx, GColorBlack);
   GRect s = custom_menu_layer_get_text_rect(cardDescription || (content->elementState? content->elementState+row : NULL));
   const char* text = content->elements[row];
   if(cardDescription)
@@ -265,7 +264,7 @@ void custom_menu_layer_draw_row(GContext *ctx, const Layer *cell_layer, MenuInde
     GBitmap *icon = stateToIcon(content->elementState+row, cardDescription);
 
     graphics_context_set_compositing_mode(ctx, GCompOpAssign);
-    graphics_draw_bitmap_in_rect(ctx, icon, (GRect){.origin = (GPoint){.x = 1, .y = 10}, .size = icon->bounds.size});
+    graphics_draw_bitmap_in_rect(ctx, icon, (GRect){.origin = (GPoint){.x = 1, .y = 10}, .size = gbitmap_get_bounds(icon).size});
   }
 }
 
@@ -332,6 +331,10 @@ CustomMenuLayer* custom_menu_layer_create(CustomWindow* cwindow, bool cardDescri
   this->cwindow = cwindow;
   this->cardDescription = cardDescription;
   this->menuLayer = menu_layer_create(layer_get_bounds(window_get_root_layer(this->cwindow->window)));
+  GColor fg = COLOR_FALLBACK(GColorDukeBlue, GColorBlack);
+  GColor bg = COLOR_FALLBACK(GColorWhite, GColorWhite);
+  menu_layer_set_normal_colors(this->menuLayer, bg, fg);
+  menu_layer_set_highlight_colors(this->menuLayer, fg, bg);
   this->callbacks = (MenuLayerCallbacks){
     .draw_header = custom_menu_layer_draw_header,
     .draw_row = custom_menu_layer_draw_row,

@@ -197,7 +197,7 @@ function sendActiveChecklist() {
 
 function loadBoards() {
   loadedInit = true;
-  makeRequest('members/me?fields=username&boards=open&board_lists=open', loadedUser, loadingFailed);
+  makeRequest('members/me?fields=username&boards=open&board_lists=open&board_fields=starred,name', loadedUser, loadingFailed);
 }
 
 
@@ -244,9 +244,16 @@ function posSorting(a, b) {
   return a.pos - b.pos;
 }
 
+function boardSorting(a,b) {
+  if(a.starred != b.starred)
+    return b.starred - a.starred;
+  return a.name.localeCompare(b.name);
+}
+
 function loadedUser(user) {
   globalData.user = user;
 
+  user.boards.sort(boardSorting);
   for(var i=0; i< user.boards.length; ++i) {
     var board = user.boards[i];
     board.lists.sort(posSorting);
