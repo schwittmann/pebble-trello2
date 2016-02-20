@@ -263,7 +263,7 @@ void custom_menu_layer_draw_row(GContext *ctx, const Layer *cell_layer, MenuInde
   if(content->elementState || cardDescription) {
     GBitmap *icon = stateToIcon(content->elementState+row, cardDescription);
 
-    graphics_context_set_compositing_mode(ctx, GCompOpAssign);
+    graphics_context_set_compositing_mode(ctx, GCompOpSet);
     graphics_draw_bitmap_in_rect(ctx, icon, (GRect){.origin = (GPoint){.x = 1, .y = 10}, .size = gbitmap_get_bounds(icon).size});
   }
 }
