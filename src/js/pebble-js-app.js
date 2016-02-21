@@ -298,6 +298,10 @@ function reloadActiveChecklist(){
   makeRequest('checklists/'+globalData.activeChecklist.id+"?fields=none&checkItem_fields=name,pos,state", function(checklist){
           checklist.checkItems.sort(posSorting);
           globalData.activeChecklist = checklist;
+
+          var oldChecklistRef = globalData.activeCard.checklists.filter(function(el){return el.id == checklist.id});
+          if(oldChecklistRef.length == 1)
+            oldChecklistRef[0].checkItems = checklist.checkItems;
           sendActiveChecklist();
         }, loadingFailed);
 }
