@@ -230,6 +230,7 @@ struct CustomMenuLayer{
   bool cardDescription;
   MenuLayerCallbacks callbacks;
   SimpleMenuLayerSelectCallback callback;
+  SimpleMenuLayerSelectCallback longCallback;
 };
 
 GRect custom_menu_layer_get_text_rect(bool showIcon) {
@@ -277,9 +278,7 @@ uint16_t custom_menu_layer_num_sections(struct MenuLayer *menu_layer, void *call
   return 1;
 }
 
-void custom_menu_set_select_callback(CustomMenuLayer* this, SimpleMenuLayerSelectCallback callback) {
-  this->callback = callback;
-}
+
 
 int16_t custom_menu_layer_cell_height(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *callback_context) {
     CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
@@ -325,6 +324,15 @@ void custom_menu_layer_select(struct MenuLayer *menu_layer, MenuIndex *cell_inde
     this->callback(row, this);
 }
 
+void custom_menu_layer_long_select(struct MenuLayer *menu_layer, MenuIndex *cell_index, void *callback_context) {
+  CustomMenuLayer *this = (CustomMenuLayer*) callback_context;
+  int row = cell_index->row;
+  if(custom_menu_fake_index(this))
+    row++;
+  if(this->longCallback)
+    this->longCallback(row, this);
+}
+
 CustomMenuLayer* custom_menu_layer_create(CustomWindow* cwindow, bool cardDescription) {
   CustomMenuLayer* this = malloc(sizeof(CustomMenuLayer));
   memset(this, 0, sizeof(CustomMenuLayer));
@@ -342,7 +350,8 @@ CustomMenuLayer* custom_menu_layer_create(CustomWindow* cwindow, bool cardDescri
     .get_header_height = custom_menu_layer_header_height,
     .get_num_rows = custom_menu_layer_num_rows,
     .get_num_sections = custom_menu_layer_num_sections,
-    .select_click = custom_menu_layer_select
+    .select_click = custom_menu_layer_select,
+    .select_long_click = custom_menu_layer_long_select
   };
   menu_layer_set_callbacks(this->menuLayer, this, this->callbacks);
   menu_layer_set_click_config_onto_window(this->menuLayer, cwindow->window);
@@ -409,7 +418,7 @@ void resend_timer_callback(void* data) {
 
 }
 
-#define NUMBER_IMAGES  5
+#define NUMBER_IMAGES  8
 
 typedef struct {
   uint32_t id;
@@ -422,7 +431,10 @@ LoadedBitmap loadedBitmaps[NUMBER_IMAGES] = {
   {RESOURCE_ID_TRELLO_CHECKED, NULL},
   {RESOURCE_ID_TRELLO_INFO, NULL},
   {RESOURCE_ID_TRELLO_PENDING, NULL},
-  {RESOURCE_ID_TRELLO_LOGO, NULL}
+  {RESOURCE_ID_TRELLO_LOGO, NULL},
+  {RESOURCE_ID_REFRESH, NULL},
+  {RESOURCE_ID_RECORD, NULL},
+  {RESOURCE_ID_BACK, NULL},
 };
 
 enum {
@@ -430,7 +442,10 @@ enum {
   RES_IDX_TRELLO_CHECKED,
   RES_IDX_TRELLO_INFO,
   RES_IDX_TRELLO_PENDING,
-  RES_IDX_TRELLO_LOGO
+  RES_IDX_TRELLO_LOGO,
+  RES_IDX_REFRESH,
+  RES_IDX_RECORD,
+  RES_IDX_BACK
 };
 
 
@@ -585,7 +600,7 @@ static void list_window_unload(Window *window) {
   cwindow->customMenu = NULL;
 }
 
-void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callback, const char* title) {
+void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callback, const char* title, SimpleMenuLayerSelectCallback callbackLong) {
   bool cardDescription = window == &windows[CWINDOW_CHECKLISTS];
 
   window_set_window_handlers(window->window, (WindowHandlers) {
@@ -596,7 +611,8 @@ void createListWindow(CustomWindow *window, SimpleMenuLayerSelectCallback callba
 
   window->customMenu = custom_menu_layer_create(window, cardDescription);
   window->customMenu->title = title;
-  custom_menu_set_select_callback(window->customMenu, callback);
+  window->customMenu->callback = callback;
+  window->customMenu->longCallback = callbackLong;
 
   Layer *window_layer = window_get_root_layer(window->window);
   layer_add_child(window_layer, menu_layer_get_layer(window->customMenu->menuLayer));
@@ -759,6 +775,112 @@ ElementState toggleState(ElementState oldState) {
   return STATE_UNCHECKED;
 }
 
+
+ActionBarLayer *action_bar = NULL;
+
+
+void action_bar_abort(ClickRecognizerRef recognizer, void *context) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "back button clicked on action bar, abort");
+  action_bar_layer_remove_from_window(action_bar);
+  action_bar_layer_destroy(action_bar);
+
+  // restore clicking behavior on window
+  CustomMenuLayer* menu = windows[CWINDOW_CHECKLIST].customMenu;
+  menu_layer_set_callbacks(menu->menuLayer, menu, menu->callbacks);
+  menu_layer_set_click_config_onto_window(menu->menuLayer, menu->cwindow->window);
+}
+
+void action_bar_refresh(ClickRecognizerRef recognizer, void *context) {
+  DictionaryIterator *iter;
+  AppMessageResult result = app_message_outbox_begin(&iter);
+  if (iter == NULL) {
+    vibes_double_pulse();
+    return;
+  }
+
+
+  action_bar_abort(0, NULL);
+
+  window_stack_pop(false);
+
+  window_set_user_data(windows[CWINDOW_LOADING].window, "Refreshing Checklist...");
+  window_stack_push(windows[CWINDOW_LOADING].window, true);
+  applicationState = APPSTATE_LOADING_CHECKLIST;
+
+  Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_REFRESH_CHECKLIST);
+  dict_write_tuplet(iter, &tuple);
+
+  dict_write_end(iter);
+
+  result = app_message_outbox_send();
+  if(result != APP_MSG_OK)
+    display_message_failed(result);
+}
+
+void dictation_finished(DictationSession *session, DictationSessionStatus status, char *transcription, void *context) {
+  dictation_session_destroy(session);
+  if(status != DictationSessionStatusSuccess){
+    return;
+  }
+  DictionaryIterator *iter;
+  AppMessageResult result = app_message_outbox_begin(&iter);
+  if (iter == NULL) {
+    vibes_double_pulse();
+    return;
+  }
+
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "received text:%s", transcription);
+
+  window_stack_pop(false);
+  window_set_user_data(windows[CWINDOW_LOADING].window, "Adding item to checklist...");
+  window_stack_push(windows[CWINDOW_LOADING].window, true);
+  applicationState = APPSTATE_LOADING_CHECKLIST;
+
+
+  Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_NEW_ITEM);
+
+  dict_write_tuplet(iter, &tuple);
+
+  Tuplet tuple2 = TupletCString(MESSAGE_NEW_ITEM_DICT_KEY, transcription);
+
+  dict_write_tuplet(iter, &tuple2);
+
+  dict_write_end(iter);
+
+  result = app_message_outbox_send();
+  if(result != APP_MSG_OK)
+    display_message_failed(result);
+}
+
+void action_bar_record(ClickRecognizerRef recognizer, void *context) {
+  action_bar_abort(0, NULL);
+
+  DictationSession * dictation = dictation_session_create(0, dictation_finished, NULL);
+  if(!dictation)
+    return;
+  dictation_session_start(dictation);
+}
+void click_config_provider_actionbar(void *context) {
+  window_single_click_subscribe(BUTTON_ID_SELECT, (ClickHandler) action_bar_refresh);
+  if(PBL_IF_MICROPHONE_ELSE(true, false))
+    window_single_click_subscribe(BUTTON_ID_UP, (ClickHandler) action_bar_record);
+  window_single_click_subscribe(BUTTON_ID_DOWN, (ClickHandler) action_bar_abort);
+}
+
+
+static void menu_checklist_item_select_longcallback(int index, void* ctx) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Checklist: selected item %i LONG", index);
+  action_bar = action_bar_layer_create();
+  action_bar_layer_add_to_window(action_bar, windows[CWINDOW_CHECKLIST].window);
+  action_bar_layer_set_icon(action_bar, BUTTON_ID_SELECT, loadedBitmaps[RES_IDX_REFRESH].bitmap);
+  if(PBL_IF_MICROPHONE_ELSE(true, false))
+    action_bar_layer_set_icon(action_bar, BUTTON_ID_UP, loadedBitmaps[RES_IDX_RECORD].bitmap);
+  action_bar_layer_set_icon(action_bar, BUTTON_ID_DOWN, loadedBitmaps[RES_IDX_BACK].bitmap);
+
+  action_bar_layer_set_click_config_provider(action_bar,
+                                             click_config_provider_actionbar);
+}
+
 static void menu_checklist_item_select_callback(int index, void* ctx) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Checklist: selected item %i", index);
   APP_LOG(APP_LOG_LEVEL_DEBUG, "heap_bytes_used: %u, heap_bytes_free: %u", heap_bytes_used(), heap_bytes_free());
@@ -814,7 +936,7 @@ static void menu_cards_select_callback(int index, void *ctx) {
   selected_card_index = index;
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Cards: selected index %i", index);
   windows[CWINDOW_CHECKLISTS].content = secondTree->sublists[index];
-  createListWindow(&windows[CWINDOW_CHECKLISTS], menu_checklists_select_callback, secondTree->list->elements[index]);
+  createListWindow(&windows[CWINDOW_CHECKLISTS], menu_checklists_select_callback, secondTree->list->elements[index], NULL);
   window_stack_push(windows[CWINDOW_CHECKLISTS].window, true);
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Pushed checklists");
   applicationState = APPSTATE_DISPLAY_CHECKLISTS;
@@ -831,7 +953,7 @@ static void menu_board_select_callback(int index, void *ctx) {
   selected_board_index = index;
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Menu board: selected index %i", index);
   windows[CWINDOW_LISTS].content = firstTree->sublists[index];
-  createListWindow(&windows[CWINDOW_LISTS], menu_list_select_callback, firstTree->list->elements[index]);
+  createListWindow(&windows[CWINDOW_LISTS], menu_list_select_callback, firstTree->list->elements[index], NULL);
   window_stack_push(windows[CWINDOW_LISTS].window, true);
   applicationState = APPSTATE_DISPLAY_LISTS;
 }
@@ -856,7 +978,7 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       }
       deserialize_simple_tree(iter, firstTree);
       windows[CWINDOW_BOARDS].content = firstTree->list;
-      createListWindow(&windows[CWINDOW_BOARDS], menu_board_select_callback, "Boards");
+      createListWindow(&windows[CWINDOW_BOARDS], menu_board_select_callback, "Boards", NULL);
       window_stack_remove(windows[CWINDOW_LOADING].window, false);
       window_stack_push(windows[CWINDOW_BOARDS].window, true);
       applicationState = APPSTATE_DISPLAY_BOARDS;
@@ -874,7 +996,7 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       }
       deserialize_simple_tree(iter, secondTree);
       windows[CWINDOW_CARDS].content = secondTree->list;
-      createListWindow(&windows[CWINDOW_CARDS], menu_cards_select_callback, "Cards");
+      createListWindow(&windows[CWINDOW_CARDS], menu_cards_select_callback, "Cards", NULL);
       window_stack_remove(windows[CWINDOW_LOADING].window, false);
       window_stack_push(windows[CWINDOW_CARDS].window, true);
       applicationState = APPSTATE_DISPLAY_CARDS;
@@ -895,7 +1017,7 @@ static void in_received_handler(DictionaryIterator *iter, void *context) {
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used2: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
       windows[CWINDOW_CHECKLIST].content = checklist;
       // selected_checklist_index is data structure index. +1, because [0] is card description
-      createListWindow(&windows[CWINDOW_CHECKLIST], menu_checklist_item_select_callback, windows[CWINDOW_CHECKLISTS].content->elements[selected_checklist_index+1]);
+      createListWindow(&windows[CWINDOW_CHECKLIST], menu_checklist_item_select_callback, windows[CWINDOW_CHECKLISTS].content->elements[selected_checklist_index+1], menu_checklist_item_select_longcallback);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used3: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());
       window_stack_push(windows[CWINDOW_CHECKLIST].window, true);
       APP_LOG(APP_LOG_LEVEL_DEBUG, "Heap used4: %u, Heap free: %u", heap_bytes_used(), heap_bytes_free ());

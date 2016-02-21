@@ -8,6 +8,8 @@ var MESSAGE_TYPE_CHECKLIST = 5;
 var MESSAGE_TYPE_SELECTED_ITEM = 6;
 var MESSAGE_TYPE_ITEM_STATE_CHANGED = 7;
 var MESSAGE_TYPE_HTTP_FAIL          = 8
+var MESSAGE_TYPE_REFRESH_CHECKLIST = 9;
+var MESSAGE_TYPE_NEW_ITEM          = 11;
 
 var loadedInit = false;
 var globalData = {};
@@ -144,6 +146,18 @@ Pebble.addEventListener("appmessage",
         globalData.activeChecklist = globalData.activeCard.checklists[e.payload.checklistidx];
         sendActiveChecklist();
         break;
+      case MESSAGE_TYPE_REFRESH_CHECKLIST:
+        console.log("Got type MESSAGE_TYPE_REFRESH_CHECKLIST");
+        reloadActiveChecklist();
+        break;
+      case MESSAGE_TYPE_NEW_ITEM:
+        console.log("Got type MESSAGE_TYPE_NEW_ITEM");
+        console.log("item: "+e.payload.newItem);
+        var newItem = encodeURIComponent(e.payload.newItem);
+        makeRequest('checklists/'+globalData.activeChecklist.id+"/checkItems?name="+newItem, function(checklist){
+          reloadActiveChecklist();
+        }, loadingFailed, "POST");
+        break;
       case MESSAGE_TYPE_SELECTED_ITEM:
         console.log("Got type MESSAGE_TYPE_SELECTED_ITEM");
         if (!(e.payload.itemidx in globalData.activeChecklist.checkItems)) {
@@ -278,4 +292,12 @@ function loadingFailed(txt, code) {
   msg.failText = "Network failed ("+code+"):\n"+txt;
   
   sendToPebble(msg);
+}
+
+function reloadActiveChecklist(){
+  makeRequest('checklists/'+globalData.activeChecklist.id+"?fields=none&checkItem_fields=name,pos,state", function(checklist){
+          checklist.checkItems.sort(posSorting);
+          globalData.activeChecklist = checklist;
+          sendActiveChecklist();
+        }, loadingFailed);
 }
