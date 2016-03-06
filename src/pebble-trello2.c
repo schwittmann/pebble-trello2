@@ -1114,8 +1114,10 @@ static void app_message_init(void) {
   app_message_register_inbox_dropped(in_dropped_handler);
   app_message_register_outbox_failed(out_failed_handler);
   app_message_register_outbox_sent(out_success_handler);
-  // Init buffers
-  app_message_open(app_message_inbox_size_maximum(), APP_MESSAGE_OUTBOX_SIZE_MINIMUM);
+
+  // We allocate memory as it's needed. Using app_message_inbox_size_maximum will yield too much memory at this point.
+  // A third seems reasonable, all structures have to be hold twice in memory while deserializing (+overhead).
+  app_message_open(heap_bytes_free()/3, APP_MESSAGE_OUTBOX_SIZE_MINIMUM);
 }
 
 
