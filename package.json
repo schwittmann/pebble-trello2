@@ -16,7 +16,6 @@
           "file": "images/trello-box.png"
         },
         {
-          "menuIcon": true,
           "type": "png",
           "name": "TRELLO_CHECKED",
           "file": "images/trello-checked.png"
@@ -48,6 +47,7 @@
         },
         {
           "type": "png",
+          "menuIcon": true,
           "name": "TRELLO_LOGO",
           "file": "images/trello-logo.png"
         }
