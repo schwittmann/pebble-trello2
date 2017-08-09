@@ -37,7 +37,7 @@ function makeRequest(urlpath, success, fail, verb) {
   }
 
   var completeURL = 'https://api.trello.com/1/'+urlpath+'&key=e3227833b55cbe24bfedd05e5ec870dd&token='+localStorage.getItem("token");
-  console.log("Requesting "+completeURL);
+  console.log("Requesting: "+completeURL);
   req.open(verb, completeURL);
   req.onload = function(e) {
     if (req.readyState != 4)
@@ -116,7 +116,7 @@ Pebble.addEventListener("webviewclosed", function (e) {
     }
     return;
   }
-  
+
   if(localStorage.getItem("token") == configuration.token) {
     console.log("Got already known token");
     return;
@@ -128,12 +128,12 @@ Pebble.addEventListener("webviewclosed", function (e) {
 
 Pebble.addEventListener("appmessage",
 	function(e) {
-		console.log("JS: got message");
+		console.log("JS: got appmessage");
 		console.log(JSON.stringify(e.payload));
 
     console.log("payload type:"+e.payload.type);
     switch(e.payload.type) {
-      case MESSAGE_TYPE_SELECTED_LIST: 
+      case MESSAGE_TYPE_SELECTED_LIST:
         console.log("Got type MESSAGE_TYPE_SELECTED_LIST");
         console.log("Selected boardidx:"+e.payload.boardidx);
         globalData.activeBoard = globalData.user.boards[e.payload.boardidx];
@@ -198,13 +198,24 @@ function sendActiveChecklist() {
   var msg = {};
   msg.type = MESSAGE_TYPE_CHECKLIST;
   msg.numElements = checklist.checkItems.length;
-  for(var i=0; i<msg.numElements; ++i) {
-    var item = checklist.checkItems[i];
-    msg[2*i] = item.name;
-    msg[2*i+1] = item.state == 'incomplete'?0:1;
+  console.log("length: "+msg.numElements.toString())
+  if (msg.numElements.toString() > 0 ){
+    console.log("Found checklist!")
   }
+    for(var i=0; i<msg.numElements; ++i) {
+      var item = checklist.checkItems[i];
+      msg[2*i] = item.name;
+      msg[2*i+1] = item.state == 'incomplete'?0:1;
+    }
+  // } else {
+  //     var item = checklist.checkItems[i];
+  //     msg[2*i] = item.name;
+  //     msg[2*i+1] = item.state == 'incomplete'?0:1;
+  // }
 
   msg.checklistid = globalData.activeChecklist.id;
+  console.log("Sent message");
+  console.log(msg);
 
   sendToPebble(msg);
 }
@@ -281,7 +292,7 @@ function loadedUser(user) {
   var msg = {};
   msg.type = MESSAGE_TYPE_BOARDS;
   addData(msg, data);
-  
+
   sendToPebble(msg);
 }
 
@@ -290,7 +301,7 @@ function loadingFailed(txt, code) {
   var msg = {};
   msg.type = MESSAGE_TYPE_HTTP_FAIL;
   msg.failText = "Network failed ("+code+"):\n"+txt;
-  
+
   sendToPebble(msg);
 }
 
@@ -303,5 +314,7 @@ function reloadActiveChecklist(){
           if(oldChecklistRef.length == 1)
             oldChecklistRef[0].checkItems = checklist.checkItems;
           sendActiveChecklist();
+          console.log("Sent active checklist")
+          console.log(oldChecklistRef)
         }, loadingFailed);
 }
