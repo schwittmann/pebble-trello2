@@ -253,11 +253,9 @@ function addData(msg, data) {
 /* ??
 */
 function loadedCards(cards) {
-    console.log('loadedCards');
-    console.log(cards);
-
+    // Attach to global data scope
     globalData.cards = cards;
-
+    // Sort the checklist
     for(var i=0; i< cards.length; ++i) {
         var card = cards[i];
         card.checklists.sort(posSorting);
@@ -265,17 +263,27 @@ function loadedCards(cards) {
             card.checklists[j].checkItems.sort(posSorting);
         }
     }
-
+    // Attach the card description (idx=0) and list of checklist items (idx=1+)
     var data = {};
-    for(var k=0; k<cards.length;++k) {
+    for(var k=0; k<cards.length; ++k) {
+        // All cards have a description even if an empty string (set as index 0)
         var descArray = 'desc' in cards[k]? [cards[k].desc]:[''];
-        data[cards[k].name] = descArray.concat(cards[k].checklists.map(function(e){return e.name;}));
-    }
+        // Append all checklist items after the description
+        var cardArray = descArray.concat(cards[k].checklists.map(function(e){return e.name;}));
 
+        // Check if both a description and checklist were added, then append to data
+        if (cardArray[0].length != 0 || cardArray.length > 1) {
+            data[cards[k].name] = cardArray;
+        } else {
+            // Otherwise skip the card
+            console.log('No properties found for card: '+cards[k].name.toString());
+        }
+    }
+    // Set message type and configure app data
     var msg = {};
     msg.type = MESSAGE_TYPE_CARDS;
     addData(msg, data);
-
+    // Send to pebble
     sendToPebble(msg);
 }
 
