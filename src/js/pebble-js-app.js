@@ -272,7 +272,7 @@ function loadedCards(cards) {
         var cardArray = descArray.concat(cards[k].checklists.map(function(e){return e.name;}));
 
         // Check if both a description and checklist were added, then append to data
-        if (cardArray[0].length != 0 || cardArray.length > 1) {
+        if (cardArray.length >= 2) {
             data[cards[k].name] = cardArray;
         } else {
             // Otherwise skip the card
