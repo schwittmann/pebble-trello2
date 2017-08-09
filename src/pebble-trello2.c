@@ -884,7 +884,7 @@ static void menu_checklist_item_select_longcallback(int index, void* ctx) {
 static void menu_checklist_item_select_callback(int index, void* ctx) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Checklist: selected item %i", index);
   APP_LOG(APP_LOG_LEVEL_DEBUG, "heap_bytes_used: %u, heap_bytes_free: %u", heap_bytes_used(), heap_bytes_free());
-  
+
   if(isPendingState(checklist->elementState[index])) {
     vibes_double_pulse();
     return;

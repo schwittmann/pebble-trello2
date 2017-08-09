@@ -1,0 +1,89 @@
+{
+  "version": "3.2.0",
+  "author": "Schwittmann",
+  "private": true,
+  "dependencies": {},
+  "keywords": [
+    "pebble-app"
+  ],
+  "pebble": {
+    "sdkVersion": "3",
+    "resources": {
+      "media": [
+        {
+          "type": "png",
+          "name": "TRELLO_BOX",
+          "file": "images/trello-box.png"
+        },
+        {
+          "menuIcon": true,
+          "type": "png",
+          "name": "TRELLO_CHECKED",
+          "file": "images/trello-checked.png"
+        },
+        {
+          "type": "png",
+          "name": "TRELLO_INFO",
+          "file": "images/trello-info.png"
+        },
+        {
+          "type": "png",
+          "name": "TRELLO_PENDING",
+          "file": "images/trello-pending.png"
+        },
+        {
+          "type": "png",
+          "name": "REFRESH",
+          "file": "images/refresh.png"
+        },
+        {
+          "type": "png",
+          "name": "RECORD",
+          "file": "images/record.png"
+        },
+        {
+          "type": "png",
+          "name": "BACK",
+          "file": "images/back.png"
+        },
+        {
+          "type": "png",
+          "name": "TRELLO_LOGO",
+          "file": "images/trello-logo.png"
+        }
+      ]
+    },
+    "projectType": "native",
+    "uuid": "32bf21ee-b05e-4a80-97b7-21d2e2419a71",
+    "messageKeys": {
+      "checklistidx": 1000006,
+      "cardidx": 1000005,
+      "itemidx": 1000007,
+      "value": 1000001,
+      "numElements": 1000002,
+      "checklistid": 1000009,
+      "failText": 1000010,
+      "newItem": 1000011,
+      "itemstate": 1000008,
+      "listidx": 1000004,
+      "type": 1000000,
+      "boardidx": 1000003
+    },
+    "enableMultiJS": false,
+    "displayName": "Trebble: Checklists for Trello",
+    "watchapp": {
+      "onlyShownOnCommunication": false,
+      "hiddenApp": false,
+      "watchface": false
+    },
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "diorite"
+    ],
+    "capabilities": [
+      "configurable"
+    ]
+  },
+  "name": "Trebble"
+}
