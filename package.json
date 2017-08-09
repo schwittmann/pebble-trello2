@@ -85,5 +85,8 @@
       "configurable"
     ]
   },
-  "name": "Trebble"
+  "name": "Trebble",
+  "devDependencies": {
+    "eslint": "^4.3.0"
+  }
 }
