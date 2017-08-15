@@ -9,6 +9,7 @@ var MESSAGE_TYPE_ITEM_STATE_CHANGED = 7;
 var MESSAGE_TYPE_HTTP_FAIL = 8;
 var MESSAGE_TYPE_REFRESH_CHECKLIST = 9;
 var MESSAGE_TYPE_NEW_ITEM = 11;
+var MESSAGE_TYPE_NO_CHECKLISTS = 12;
 
 var loadedInit = false;
 var globalData = {};
@@ -99,7 +100,7 @@ Pebble.addEventListener('ready',
     }
 );
 
-/* ??
+/* Authorize Trello Credentials
 */
 Pebble.addEventListener('showConfiguration', function() {
     Pebble.openURL('https://trello.com/1/authorize?callback_method=fragment&scope=read,write&expiration=never&name=Pebble&key=e3227833b55cbe24bfedd05e5ec870dd&return_url=https://pebble-trello.appspot.com');
@@ -144,7 +145,8 @@ Pebble.addEventListener('appmessage', function(e) {
         console.log('Selected boardidx:'+e.payload.boardidx);
         globalData.activeBoard = globalData.user.boards[e.payload.boardidx];
         globalData.activeList = globalData.activeBoard.lists[e.payload.listidx];
-        makeRequest('lists/'+globalData.activeList.id+'/cards?fields=id,desc,name,checklists&checklists=all', loadedCards, loadingFailed);
+        makeRequest('lists/'+globalData.activeList.id+'/cards?fields=id,desc,name,checklists&checklists=all',
+            loadedCards, loadingFailed);
         break;
     case MESSAGE_TYPE_SELECTED_CHECKLIST:
         console.log('Got type MESSAGE_TYPE_SELECTED_CHECKLIST');
@@ -160,7 +162,7 @@ Pebble.addEventListener('appmessage', function(e) {
         console.log('Got type MESSAGE_TYPE_NEW_ITEM');
         console.log('item: '+e.payload.newItem);
         var newItem = encodeURIComponent(e.payload.newItem);
-        makeRequest('checklists/'+globalData.activeChecklist.id+'/checkItems?name='+newItem, function(checklist){
+        makeRequest('checklists/'+globalData.activeChecklist.id+'/checkItems?name='+newItem, function() {
             reloadActiveChecklist();
         }, loadingFailed, 'POST');
         break;
@@ -185,7 +187,7 @@ Pebble.addEventListener('appmessage', function(e) {
                 console.log('Update has failed. Setting to old state.');
                 state = (state+1)%2;
             }
-            //update our cache
+            // update our cache
             item.state = state?'complete':'incomplete';
             msg.itemstate = state;
             sendToPebble(msg);
@@ -197,14 +199,6 @@ Pebble.addEventListener('appmessage', function(e) {
     }
 });
 
-/* WIP: Determine if a checklist exists for the selected card
-*/
-function checkChecklist() {
-    var checklist = globalData.activeChecklist;
-    console.log('Checklist of length: '+checklist.checkItems.length.toString());
-    return (checklist.checkItems.length.toString() > 0);
-}
-
 /* Push the checklist to the device
 */
 function sendActiveChecklist() {
@@ -213,27 +207,23 @@ function sendActiveChecklist() {
     var msg = {};
     msg.type = MESSAGE_TYPE_CHECKLIST;
     msg.numElements = checklist.checkItems.length;
-    // WIP
-    console.log(checkChecklist());
     for(var i=0; i<msg.numElements; ++i) {
         var item = checklist.checkItems[i];
         msg[2*i] = item.name;
         msg[2*i+1] = item.state == 'incomplete'?0:1;
     }
-
     msg.checklistid = globalData.activeChecklist.id;
-    console.log('Sent checklist ID: '+msg.toString());
     sendToPebble(msg);
 }
 
-/* ??
+/* Request board and update state
 */
 function loadBoards() {
     loadedInit = true;
     makeRequest('members/me?fields=username&boards=open&board_lists=open&board_fields=starred,name', loadedUser, loadingFailed);
 }
 
-/* ??
+/* Extend msg with additional data
 */
 function addData(msg, data) {
     msg.numElements = 0;
@@ -250,7 +240,7 @@ function addData(msg, data) {
     }
 }
 
-/* ??
+/* Callback if HTTP request to load cards was successful
 */
 function loadedCards(cards) {
     // Attach to global data scope
@@ -272,7 +262,9 @@ function loadedCards(cards) {
         var cardArray = descArray.concat(cards[k].checklists.map(function(e){return e.name;}));
 
         // Check if both a description and checklist were added, then append to data
-        if (cardArray.length >= 2) {
+        // if (cardArray[0].length != 0 || cardArray.length > 1) {
+        // Only check for checklists:
+        if (cardArray.length > 1) {
             data[cards[k].name] = cardArray;
         } else {
             // Otherwise skip the card
@@ -281,7 +273,7 @@ function loadedCards(cards) {
     }
     // Set message type and configure app data
     var msg = {};
-    msg.type = MESSAGE_TYPE_CARDS;
+    msg.type = (data.length > 0)? MESSAGE_TYPE_CARDS:MESSAGE_TYPE_NO_CHECKLISTS;
     addData(msg, data);
     // Send to pebble
     sendToPebble(msg);
