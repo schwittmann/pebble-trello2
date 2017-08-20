@@ -1,5 +1,5 @@
 {
-  "version": "3.3.0",
+  "version": "3.4.0",
   "author": "Schwittmann",
   "private": true,
   "dependencies": {},
@@ -78,8 +78,7 @@
     },
     "targetPlatforms": [
       "aplite",
-      "basalt",
-      "diorite"
+      "basalt"
     ],
     "capabilities": [
       "configurable"
