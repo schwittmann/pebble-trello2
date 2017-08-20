@@ -1,6 +1,6 @@
-# pebble-trello2 (view checklists)
+# pebble-trello2
 
-Trello app for Pebble. Version 2: C rewrite. [*Fork to display only cards with checklists*]
+Trello app for Pebble. Version 2: C rewrite.
 
 ## Disclaimer
 
