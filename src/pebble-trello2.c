@@ -2,6 +2,9 @@
 #include <pebble-trello2.h>
 #include <string.h>
 
+#include "action_menu.h"
+
+
 void* iso_realloc(void* ptr, size_t size) {
   if (ptr != NULL) {
     return realloc(ptr, size);
@@ -776,38 +779,21 @@ ElementState toggleState(ElementState oldState) {
 }
 
 
-ActionBarLayer *action_bar = NULL;
-
-
-void action_bar_abort(ClickRecognizerRef recognizer, void *context) {
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "back button clicked on action bar, abort");
-  action_bar_layer_remove_from_window(action_bar);
-  action_bar_layer_destroy(action_bar);
-
-  // restore clicking behavior on window
-  CustomMenuLayer* menu = windows[CWINDOW_CHECKLIST].customMenu;
-  menu_layer_set_callbacks(menu->menuLayer, menu, menu->callbacks);
-  menu_layer_set_click_config_onto_window(menu->menuLayer, menu->cwindow->window);
-}
-
-void action_bar_refresh(ClickRecognizerRef recognizer, void *context) {
+void reload_checklist(bool deleteChecked) {
   DictionaryIterator *iter;
   AppMessageResult result = app_message_outbox_begin(&iter);
   if (iter == NULL) {
     vibes_double_pulse();
     return;
   }
-
-
-  action_bar_abort(0, NULL);
-
   window_stack_pop(false);
 
-  window_set_user_data(windows[CWINDOW_LOADING].window, "Refreshing Checklist...");
+  const char* msg = deleteChecked?"Deleting items...":"Refreshing Checklist...";
+  window_set_user_data(windows[CWINDOW_LOADING].window, (void*)msg);
   window_stack_push(windows[CWINDOW_LOADING].window, true);
   applicationState = APPSTATE_LOADING_CHECKLIST;
 
-  Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, MESSAGE_TYPE_REFRESH_CHECKLIST);
+  Tuplet tuple = TupletInteger(MESSAGE_TYPE_DICT_KEY, deleteChecked ? MESSAGE_TYPE_DELETE_ITEMS : MESSAGE_TYPE_REFRESH_CHECKLIST);
   dict_write_tuplet(iter, &tuple);
 
   dict_write_end(iter);
@@ -815,6 +801,10 @@ void action_bar_refresh(ClickRecognizerRef recognizer, void *context) {
   result = app_message_outbox_send();
   if(result != APP_MSG_OK)
     display_message_failed(result);
+}
+
+void action_menu_refresh() {
+  reload_checklist(false);
 }
 
 void dictation_finished(DictationSession *session, DictationSessionStatus status, char *transcription, void *context) {
@@ -852,33 +842,22 @@ void dictation_finished(DictationSession *session, DictationSessionStatus status
     display_message_failed(result);
 }
 
-void action_bar_record(ClickRecognizerRef recognizer, void *context) {
-  action_bar_abort(0, NULL);
-
+void action_menu_record() {
   DictationSession * dictation = dictation_session_create(0, dictation_finished, NULL);
   if(!dictation)
     return;
   dictation_session_start(dictation);
 }
-void click_config_provider_actionbar(void *context) {
-  window_single_click_subscribe(BUTTON_ID_SELECT, (ClickHandler) action_bar_refresh);
-  if(PBL_IF_MICROPHONE_ELSE(true, false))
-    window_single_click_subscribe(BUTTON_ID_UP, (ClickHandler) action_bar_record);
-  window_single_click_subscribe(BUTTON_ID_DOWN, (ClickHandler) action_bar_abort);
+
+void action_menu_delete() {
+  reload_checklist(true);
 }
 
 
 static void menu_checklist_item_select_longcallback(int index, void* ctx) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Checklist: selected item %i LONG", index);
-  action_bar = action_bar_layer_create();
-  action_bar_layer_add_to_window(action_bar, windows[CWINDOW_CHECKLIST].window);
-  action_bar_layer_set_icon(action_bar, BUTTON_ID_SELECT, loadedBitmaps[RES_IDX_REFRESH].bitmap);
-  if(PBL_IF_MICROPHONE_ELSE(true, false))
-    action_bar_layer_set_icon(action_bar, BUTTON_ID_UP, loadedBitmaps[RES_IDX_RECORD].bitmap);
-  action_bar_layer_set_icon(action_bar, BUTTON_ID_DOWN, loadedBitmaps[RES_IDX_BACK].bitmap);
-
-  action_bar_layer_set_click_config_provider(action_bar,
-                                             click_config_provider_actionbar);
+  add_action_menu(action_menu_refresh, action_menu_record, action_menu_delete);
+  return;
 }
 
 static void menu_checklist_item_select_callback(int index, void* ctx) {

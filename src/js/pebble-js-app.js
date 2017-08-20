@@ -10,6 +10,9 @@ var MESSAGE_TYPE_ITEM_STATE_CHANGED = 7;
 var MESSAGE_TYPE_HTTP_FAIL          = 8
 var MESSAGE_TYPE_REFRESH_CHECKLIST = 9;
 var MESSAGE_TYPE_NEW_ITEM          = 11;
+var MESSAGE_TYPE_DELETE_ITEMS = 13;
+
+var APP_KEY = "e3227833b55cbe24bfedd05e5ec870dd";
 
 var loadedInit = false;
 var globalData = {};
@@ -36,7 +39,8 @@ function makeRequest(urlpath, success, fail, verb) {
     return;
   }
 
-  var completeURL = 'https://api.trello.com/1/'+urlpath+'&key=e3227833b55cbe24bfedd05e5ec870dd&token='+localStorage.getItem("token");
+  var urlSep = urlpath.indexOf("?") == -1 ? '?' : '&';
+  var completeURL = 'https://api.trello.com/1/'+urlpath + urlSep +'key='+APP_KEY+'&token='+localStorage.getItem("token");
   console.log("Requesting: "+completeURL);
   req.open(verb, completeURL);
   req.onload = function(e) {
@@ -98,7 +102,7 @@ Pebble.addEventListener("ready",
 );
 
 Pebble.addEventListener('showConfiguration', function() {
-  Pebble.openURL('https://trello.com/1/authorize?callback_method=fragment&scope=read,write&expiration=never&name=Pebble&key=e3227833b55cbe24bfedd05e5ec870dd&return_url=https://pebble-trello.appspot.com');
+  Pebble.openURL('https://trello.com/1/authorize?callback_method=fragment&scope=read,write&expiration=never&name=Pebble&key='+APP_KEY+'&return_url=https://pebble-trello.appspot.com');
 });
 
 Pebble.addEventListener("webviewclosed", function (e) {
@@ -149,6 +153,10 @@ Pebble.addEventListener("appmessage",
       case MESSAGE_TYPE_REFRESH_CHECKLIST:
         console.log("Got type MESSAGE_TYPE_REFRESH_CHECKLIST");
         reloadActiveChecklist();
+        break;
+      case MESSAGE_TYPE_DELETE_ITEMS:
+        console.log("Got type MESSAGE_TYPE_DELETE_ITEMS");
+        deleteCheckedItems();
         break;
       case MESSAGE_TYPE_NEW_ITEM:
         console.log("Got type MESSAGE_TYPE_NEW_ITEM");
@@ -317,4 +325,20 @@ function reloadActiveChecklist(){
           console.log("Sent active checklist")
           console.log(oldChecklistRef)
         }, loadingFailed);
+}
+
+function deleteCheckedItems() {
+  var allIds = globalData.activeChecklist.checkItems.filter(function(element) {
+    return element.state == "complete";
+  }).map(function(element){
+    return element.id;
+  });
+  console.log("will delete "+allIds.length+" items");
+  function nextRequest() {
+    if (allIds.length == 0)
+      return reloadActiveChecklist();
+    var head = allIds.splice(0,1)[0];
+    makeRequest('checklists/'+globalData.activeChecklist.id+'/checkItems/'+head, nextRequest, nextRequest, "delete");
+  }
+  nextRequest();
 }
